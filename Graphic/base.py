@@ -2,12 +2,11 @@ import pygame
 import numpy as np
 from typing import Optional, Tuple, List, Any
 from dataclasses import dataclass
+import random
+import math
 
 PARTICLE_EMISSION_QUALITY = 3
-EFFECTS_QUALITY = 2
-
-import pygame
-import numpy as np
+EFFECTS_QUALITY = 3
 
 
 class PostProcessing:
@@ -39,6 +38,116 @@ class PostProcessing:
         # 3. Upscale & Add
         final_glow = pygame.transform.smoothscale(small_surf, size)
         surface.blit(final_glow, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+
+    @staticmethod
+    def linear_bloom(surface: pygame.Surface, strength=10.0, quality=EFFECTS_QUALITY):
+        if quality <= 0: return
+
+        scale = [0, 8, 6, 4, 2, 1][quality]
+        size = surface.get_size()
+        small_size = (max(1, size[0] // scale), max(1, size[1] // scale))
+
+        small_surf = pygame.transform.smoothscale(surface, small_size)
+
+        pixels = pygame.surfarray.array3d(small_surf).astype(np.float16)
+        alphas = pygame.surfarray.array_alpha(small_surf).astype(np.float16)
+
+        luma = np.max(pixels, axis=2) / 255.0
+        alpha_weight = alphas / 255.0
+
+        weight = luma * alpha_weight * strength
+
+        processed = pixels * weight[..., None]
+        np.clip(processed, 0, 255, out=processed)
+
+        bloom_small = pygame.Surface(small_size, pygame.SRCALPHA)
+        pygame.surfarray.blit_array(bloom_small, processed.astype(np.uint8))
+
+        pygame.surfarray.pixels_alpha(bloom_small)[...] = np.clip(np.max(processed, axis=2) * 2, 0, 255).astype(
+            np.uint8)
+
+        final_glow = pygame.transform.smoothscale(bloom_small, size)
+        surface.blit(final_glow, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+    @staticmethod
+    def halo(surface: pygame.Surface, radius=4, strength=1.5, tint=(255, 255, 255), quality=EFFECTS_QUALITY):
+        if quality <= 0: return
+
+        # 1. Determine Scale
+        # We use a single, larger downscale factor based on radius to simulate blur
+        scale = [0, 12, 10, 8, 4, 1][quality]
+        orig_size = surface.get_size()
+
+        # Calculate a size that accounts for the "radius" (blur intensity)
+        # This prevents the drift caused by repeated // 2 operations
+        blur_divisor = max(1, scale + (radius * 2))
+        small_size = (max(1, orig_size[0] // blur_divisor),
+                      max(1, orig_size[1] // blur_divisor))
+
+        # 2. Extract and Process
+        small_surf = pygame.transform.smoothscale(surface, small_size)
+        pixels = pygame.surfarray.array3d(small_surf).astype(np.float16)
+        alphas = pygame.surfarray.array_alpha(small_surf).astype(np.float16)
+
+        # Luma weight logic
+        weight = (np.max(pixels, axis=2) / 255.0) * (alphas / 255.0) * strength
+        processed = weight[..., None] * np.array(tint, dtype=np.float16)
+        np.clip(processed, 0, 255, out=processed)
+
+        # 3. Create Halo Surface
+        halo_small = pygame.Surface(small_size, pygame.SRCALPHA)
+        pygame.surfarray.blit_array(halo_small, processed.astype(np.uint8))
+
+        # Proportional Alpha
+        new_alphas = np.clip(np.max(processed, axis=2) * 2, 0, 255).astype(np.uint8)
+        pygame.surfarray.pixels_alpha(halo_small)[...] = new_alphas
+
+        # 4. Final Upscale (The "Blur" effect)
+        # By scaling directly back to orig_size, we avoid coordinate drift
+        final_halo = pygame.transform.smoothscale(halo_small, orig_size)
+
+        # 5. PINNED BLIT
+        # Blit at (0, 0) because final_halo is a full-screen representation of the layer
+        surface.blit(final_halo, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+    @staticmethod
+    def lumen(surface: pygame.Surface, threshold=100, radius=10, intensity=2.5, quality=EFFECTS_QUALITY):
+        if quality <= 0: return
+
+        size = surface.get_size()
+        scale = [0, 10, 8, 6, 4, 1][quality]  # Downscale for speed and blur spread
+
+        # 1. Capture the 'Emissive' source
+        small_size = (max(1, size[0] // scale), max(1, size[1] // scale))
+        source_surf = pygame.transform.smoothscale(surface, small_size)
+
+        # 2. High-Pass Filter: Extract only the bright pixels
+        pixels = pygame.surfarray.array3d(source_surf).astype(np.float16)
+        alphas = pygame.surfarray.array_alpha(source_surf).astype(np.float16)
+
+        # Calculate luma (brightness)
+        luma = (pixels[..., 0] * 0.299 + pixels[..., 1] * 0.587 + pixels[..., 2] * 0.114)
+
+        # Mask out everything below the threshold (Paint.NET logic)
+        mask = luma > threshold
+        emissive_pixels = np.zeros_like(pixels)
+        emissive_pixels[mask] = pixels[mask] * intensity
+
+        # 3. Create the Glow Buffer
+        glow_buffer = pygame.Surface(small_size, pygame.SRCALPHA)
+        np.clip(emissive_pixels, 0, 255, out=emissive_pixels)
+        pygame.surfarray.blit_array(glow_buffer, emissive_pixels.astype(np.uint8))
+
+        # Alpha bleed: make the alpha reflect the light intensity
+        new_alphas = np.clip(np.max(emissive_pixels, axis=2) * 1.5, 0, 255).astype(np.uint8)
+        pygame.surfarray.pixels_alpha(glow_buffer)[...] = new_alphas
+
+        # 4. Multi-Pass Upscale (Simulates Gaussian spread)
+        # We upscale to slightly larger than the target, then back down to create softness
+        final_lumen = pygame.transform.smoothscale(glow_buffer, size)
+
+        # 5. Final Blit: Add the light back to the world
+        surface.blit(final_lumen, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
 
     @staticmethod
     def general_controls(surface: pygame.Surface, saturation=1.2, tint=(1.0, 1.0, 1.0), brightness=1.0,
@@ -80,6 +189,35 @@ class PostProcessing:
         small_size = (max(1, int(size[0] * shrink)), max(1, int(size[1] * shrink)))
         temp = pygame.transform.smoothscale(surface, small_size)
         pygame.transform.smoothscale(temp, size, surface)
+
+    @staticmethod
+    def light_shader(surface: pygame.Surface, amount=4, strength=1.5, quality=EFFECTS_QUALITY):
+        """
+        Designed for a dedicated 'Light Layer'.
+        Blurs the emissive sources and adds them back to create a volumetric glow.
+        """
+        if quality <= 0 or amount <= 0: return
+
+        size = surface.get_size()
+
+        # 1. Generate the blur (the f(x) part)
+        # We use a lower shrink factor for 'light' to keep the glow wide and soft
+        shrink = 1 / (amount * [0, 8, 4, 2, 1, 1, 1][quality])
+        small_size = (max(1, int(size[0] * shrink)), max(1, int(size[1] * shrink)))
+
+        # Create the glow buffer
+        # Note: We don't copy the whole surface if it's already a dedicated light layer
+        glow_buffer = pygame.transform.smoothscale(surface, small_size)
+        glow_buffer = pygame.transform.smoothscale(glow_buffer, size)
+
+        # 2. Apply Strength/Gain
+        if strength != 1.0:
+            # This amplifies the light intensity before adding it back
+            glow_buffer.fill((min(255, 255 * strength),) * 3, special_flags=pygame.BLEND_RGB_MULT)
+
+        # 3. y = x + f(x)
+        # The original sharp lights (x) + the blurred glow (f(x))
+        surface.blit(glow_buffer, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
 
     @staticmethod
     def vignette(surface: pygame.Surface, intensity=0.5, quality=EFFECTS_QUALITY):
@@ -151,7 +289,48 @@ class ParticleEmitter:
             pygame.draw.circle(surface, self.color, (px, py), max(1, int(size * self.size)))
 
 
-import random
+class FireflyEmitter(ParticleEmitter):
+    def __init__(self, color=(190, 200, 190), count=50, size=1):
+        super().__init__(color, count, size, g=0, sparsity=1.0)
+        self.firefly_data = np.random.uniform(0, 5, (int(count * PARTICLE_EMISSION_QUALITY), 5))
+
+    def update(self, dt):
+        if not np.any(self.active): return
+
+        indices = np.where(self.active)[0]
+        for i in indices:
+            self.firefly_data[i, 1] += random.uniform(-2, 2) * dt
+            angle = self.firefly_data[i, 1]
+
+            speed = 20.0
+            self.data[i, 2] = math.cos(angle) * speed
+            self.data[i, 3] = math.sin(angle) * speed
+
+        self.data[self.active, 0:2] += self.data[self.active, 2:4] * dt
+        self.firefly_data[self.active, 0] += dt  # Timer
+
+    def draw(self, surface, camera):
+        indices = np.where(self.active)[0]
+        for i in indices:
+            px = int(self.data[i, 0] - camera.x)
+            py = int(self.data[i, 1] - camera.y)
+
+            # Pulse the alpha/size using a sine wave
+            timer = self.firefly_data[i, 0]
+            pulse = (math.sin(timer * 2.0 + self.firefly_data[i, 3]) + 1) / 2
+
+            # Draw the core
+            current_size = max(1, int(self.size * (1 + pulse / 4)))
+
+            # For fireflies, we draw two circles: a bright core and a soft glow
+            # Note: Pygame-ce draw.circle is fast, but for 100+ fireflies this is fine
+            color = self.color
+            pygame.draw.circle(surface, color, (px, py), current_size)
+
+            # Add a subtle bloom/glow if we are on a transparent layer
+            if pulse > 0.7:
+                glow_color = (min(255, color[0] + 50), min(255, color[1] + 50), color[2], 100)
+                pygame.draw.circle(surface, glow_color, (px, py), current_size * 2)
 
 
 @dataclass
@@ -177,7 +356,6 @@ class Camera:
             self.x += (tx - self.x) * self.smooth
             self.y += (ty - self.y) * self.smooth
 
-        # Apply Shake Offset
         if self.shake_intensity > 0.1:
             self.x += random.uniform(-self.shake_intensity, self.shake_intensity)
             self.y += random.uniform(-self.shake_intensity, self.shake_intensity)
@@ -410,7 +588,6 @@ class Game:
             for obj in self.solids:
                 self.grid.insert(obj)
 
-            # Update Logic
             update_callback(self, dt)
             self.camera.update()
 
@@ -437,26 +614,34 @@ class Game:
 
 if __name__ == "__main__":
     def s(x):
-        return int(x * 0.5)
+        return int(x * 1)
 
 
     game = Game(s(1000), s(600))
     bg2 = game.add_layer("Background2", 0.2)
     bg = game.add_layer("Background", 0.5)
+    particles = game.add_layer("particles", 1.0)
     fg = game.add_layer("Foreground", 1.0)
 
-    # fg.add_effect(PostProcessing.bloom, 20, 8, 3.0)
-    fg.add_effect(PostProcessing.bloom, 60, 0, 1.0)
+    particles.add_effect(PostProcessing.lumen, 10, 10, 2)
     # fg.add_effect(PostProcessing.blur, 3)
     from functions import *
+
     # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
     player = AnimatedSolidSprite(s(400), s(300), s(40), s(40))
     player.add_animation('idle', load_spritesheet("examples/Hare_Run.png", 32, 32, row=3))
     fg.sprites.append(player)
     game.solids.append(player)
     game.camera.target = player
-    emitter1 = ParticleEmitter(size=0.75, sparsity=0.2, g=40)
+
+    emitter1 = ParticleEmitter(size=s(1.5), sparsity=0.2, g=40)
+    ff = FireflyEmitter(count=100, size=1)
+    game.particle_emitters.append(ff)
     game.particle_emitters.append(emitter1)
+
+    for _ in range(30):
+        ff.emit(random.randint(0, 1000), random.randint(200, 500), 1)
+
     game.particle_layer_idx = 2
 
     for i in range(15):
@@ -477,7 +662,7 @@ if __name__ == "__main__":
 
     def my_update(game_inst, dt):
         keys = pygame.key.get_pressed()
-        speed = 500 * dt * 1
+        speed = 500 * dt * 0.5
 
         dx, dy = 0, 0
         if keys[pygame.K_LEFT]:  dx -= speed
@@ -490,7 +675,7 @@ if __name__ == "__main__":
         player.move(dx, dy, game_inst.grid)
         player.update_animation(dt)
 
-        # emitter1.emit(player.x + 10, player.y + 10)
+        emitter1.emit(player.x + s(20), player.y + s(20))
 
 
     game.run(my_update)

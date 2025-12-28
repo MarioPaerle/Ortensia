@@ -22,8 +22,11 @@ using the Bloom effect and a Particle Emitter
 
 GIF quality is of course very bad, but you can imagine come on
 
-### Mid Quality Bloom:
+## Better Quality _Lumen_ effect, on Animated sprite, and camera shake (@ 100FPS)
+![OrtensiaHQlumen.gif](examples%2FOrtensiaHQlumen.gif)
+
+### Mid Quality _Bloom_:
 ![ortensiagoodgraphicsgif.gif](examples%2Fortensiagoodgraphicsgif.gif)
 
-### Low Quality Bloom:
+### Low Quality _Bloom_:
 ![ortensiabadquality.gif](examples%2Fortensiabadquality.gif)
