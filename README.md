@@ -1,5 +1,6 @@
 # Ortensia
 
+![Ortensia1.png](examples%2FOrtensia1.png)
 > [!WARNING]
 > Ortensia is just born, so its full of bug, and misses a documentation
 
@@ -18,7 +19,6 @@ GIF quality is of course very bad, but you can imagine come on
 
 ### Mid Quality Bloom:
 ![ortensiagoodgraphicsgif.gif](examples%2Fortensiagoodgraphicsgif.gif)
-
 
 ### Low Quality Bloom:
 ![ortensiabadquality.gif](examples%2Fortensiabadquality.gif)
