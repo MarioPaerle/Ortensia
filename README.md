@@ -4,7 +4,12 @@
 > [!WARNING]
 > Ortensia is just born, so its full of bug, and misses a documentation
 
-Ortensia is a small lightweight library am developing primarly for myself.
+Ortensia is a Game I wanna realize, from soundtracks, to graphics, and of course gameplay.
+Ortensia will feature small lightweight libraries that will help me, and maybe others develop games.
+- Graphic (CPU Bounded simple yet fast visual effects)
+- Animations
+- Automatic Music Scoring
+- Lightweigh AI NPCs
 It aims to make simple game development easy wrapping pygame-ce.
 It will support simple graphic effects, with quality adjustment, all CPU computed leveraging 
 numpy vectorized operations.
