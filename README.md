@@ -20,7 +20,7 @@ Simple GUIs creation as well.
 **Ortensia** can support high frame rate (400+ on intel 5 12th), here are two examples working on mid and low settings,
 using the Bloom effect and a Particle Emitter
 
-GIF quality is of course very bad, but you can imagine come on
+GIF quality is of course very bad, but you can imagine come on:
 
 ## Better Quality _Lumen_ effect, on Animated sprite, and camera shake (@ 100FPS)
 ![OrtensiaHQlumen.gif](examples%2FOrtensiaHQlumen.gif)

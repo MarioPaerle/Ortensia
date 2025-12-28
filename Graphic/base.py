@@ -5,8 +5,8 @@ from dataclasses import dataclass
 import random
 import math
 
-PARTICLE_EMISSION_QUALITY = 3
-EFFECTS_QUALITY = 3
+PARTICLE_EMISSION_QUALITY = 1
+EFFECTS_QUALITY = 2
 
 
 class PostProcessing:
@@ -111,42 +111,83 @@ class PostProcessing:
         surface.blit(final_halo, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
 
     @staticmethod
-    def lumen(surface: pygame.Surface, threshold=100, radius=10, intensity=2.5, quality=EFFECTS_QUALITY):
+    def _obs_lumen(surface: pygame.Surface, threshold=100, intensity=2.5, quality=EFFECTS_QUALITY):
         if quality <= 0: return
 
         size = surface.get_size()
-        scale = [0, 10, 8, 6, 4, 1][quality]  # Downscale for speed and blur spread
+        scale = [0, 32, 16, 8, 4, 1][quality]
 
-        # 1. Capture the 'Emissive' source
         small_size = (max(1, size[0] // scale), max(1, size[1] // scale))
         source_surf = pygame.transform.smoothscale(surface, small_size)
 
-        # 2. High-Pass Filter: Extract only the bright pixels
         pixels = pygame.surfarray.array3d(source_surf).astype(np.float16)
-        alphas = pygame.surfarray.array_alpha(source_surf).astype(np.float16)
 
-        # Calculate luma (brightness)
         luma = (pixels[..., 0] * 0.299 + pixels[..., 1] * 0.587 + pixels[..., 2] * 0.114)
 
-        # Mask out everything below the threshold (Paint.NET logic)
         mask = luma > threshold
         emissive_pixels = np.zeros_like(pixels)
         emissive_pixels[mask] = pixels[mask] * intensity
 
-        # 3. Create the Glow Buffer
         glow_buffer = pygame.Surface(small_size, pygame.SRCALPHA)
         np.clip(emissive_pixels, 0, 255, out=emissive_pixels)
         pygame.surfarray.blit_array(glow_buffer, emissive_pixels.astype(np.uint8))
 
-        # Alpha bleed: make the alpha reflect the light intensity
         new_alphas = np.clip(np.max(emissive_pixels, axis=2) * 1.5, 0, 255).astype(np.uint8)
         pygame.surfarray.pixels_alpha(glow_buffer)[...] = new_alphas
 
-        # 4. Multi-Pass Upscale (Simulates Gaussian spread)
-        # We upscale to slightly larger than the target, then back down to create softness
         final_lumen = pygame.transform.smoothscale(glow_buffer, size)
 
-        # 5. Final Blit: Add the light back to the world
+        surface.blit(final_lumen, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+    @staticmethod
+    def lumen(surface: pygame.Surface, threshold=100, intensity=2.5, tint=(255, 255, 255), quality=EFFECTS_QUALITY):
+        if quality <= 0: return
+
+        size = surface.get_size()
+
+        # --- BRANCH: FAST LOWER QUALITY (quality == 1) ---
+        if quality == 1:
+            # Scale down aggressively (32x) for speed
+            small_size = (max(1, size[0] // 32), max(1, size[1] // 32))
+            # 1. Capture and downscale (creates natural blur)
+            glow_buffer = pygame.transform.smoothscale(surface, small_size)
+
+            # 2. Fast Tint & Intensity (No numpy used here)
+            tint_color = tuple(min(255, int(c * intensity)) for c in tint)
+            glow_buffer.fill(tint_color, special_flags=pygame.BLEND_RGB_MULT)
+
+            # 3. Upscale and Add
+            final_lumen = pygame.transform.smoothscale(glow_buffer, size)
+            surface.blit(final_lumen, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+            return
+
+        # --- BRANCH: STANDARD/HIGH QUALITY (quality > 1) ---
+        scale = [0, 32, 16, 8, 4, 1][quality]
+        small_size = (max(1, size[0] // scale), max(1, size[1] // scale))
+        source_surf = pygame.transform.smoothscale(surface, small_size)
+
+        pixels = pygame.surfarray.array3d(source_surf).astype(np.float16)
+
+        # Calculate luma to isolate the 'hot' spots
+        luma = (pixels[..., 0] * 0.299 + pixels[..., 1] * 0.587 + pixels[..., 2] * 0.114)
+        mask = luma > threshold
+
+        # Apply Intensity AND Tint
+        emissive_pixels = np.zeros_like(pixels)
+        tint_array = np.array(tint, dtype=np.float16) / 255.0
+        emissive_pixels[mask] = pixels[mask] * intensity * tint_array
+
+        # Create the glow buffer
+        glow_buffer = pygame.Surface(small_size, pygame.SRCALPHA)
+        np.clip(emissive_pixels, 0, 255, out=emissive_pixels)
+        pygame.surfarray.blit_array(glow_buffer, emissive_pixels.astype(np.uint8))
+
+        # Generate alpha based on brightness to ensure smooth light falloff
+        new_alphas = np.clip(np.max(emissive_pixels, axis=2) * 1.5, 0, 255).astype(np.uint8)
+        pygame.surfarray.pixels_alpha(glow_buffer)[...] = new_alphas
+
+        # Final upscale (the 'Lumen' bleed)
+        final_lumen = pygame.transform.smoothscale(glow_buffer, size)
         surface.blit(final_lumen, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
 
     @staticmethod
@@ -247,6 +288,67 @@ class PostProcessing:
 
         surface.blit(PostProcessing._vignette_mask, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
 
+    @staticmethod
+    def black_and_white(surface: pygame.Surface, intensity=1.0, quality=EFFECTS_QUALITY):
+        if quality <= 0 or intensity <= 0: return
+
+        # Use pixels3d to get a direct view (no copying)
+        pixels = pygame.surfarray.pixels3d(surface)
+
+        # Fast Integer Luma: (R+G+B) // 3 is much faster than dot products
+        # We use a bit-shift for the average to stay on the CPU's fast path
+        r, g, b = pixels[..., 0], pixels[..., 1], pixels[..., 2]
+
+        # Standard weighted luma without float conversion
+        # 0.299R + 0.587G + 0.114B approximated with integers:
+        luma = (r.astype(np.uint16) * 77 + g.astype(np.uint16) * 150 + b.astype(np.uint16) * 29) >> 8
+
+        if intensity >= 1.0:
+            # Full B&W replacement is nearly instant in-place
+            pixels[..., 0] = luma
+            pixels[..., 1] = luma
+            pixels[..., 2] = luma
+        else:
+            # Partial lerp (only used if intensity < 1.0)
+            pixels[..., 0] = pixels[..., 0] + ((luma - pixels[..., 0]) * intensity).astype(np.uint8)
+            pixels[..., 1] = pixels[..., 1] + ((luma - pixels[..., 1]) * intensity).astype(np.uint8)
+            pixels[..., 2] = pixels[..., 2] + ((luma - pixels[..., 2]) * intensity).astype(np.uint8)
+
+        del pixels
+
+    @staticmethod
+    def contrast(surface: pygame.Surface, contrast=1.2, quality=EFFECTS_QUALITY):
+        if quality <= 0 or contrast == 1.0: return
+
+        pixels = pygame.surfarray.pixels3d(surface)
+
+        # Pre-compute a 256-value Lookup Table (LUT)
+        # This is the secret to speed: we calculate the math 256 times instead of 1,000,000 times
+        full_range = np.arange(256, dtype=np.float16)
+        lut = ((full_range - 128) * contrast + 128)
+        lut = np.clip(lut, 0, 255).astype(np.uint8)
+
+        # Apply the LUT to the whole array at once
+        pixels[...] = lut[pixels]
+
+        del pixels
+
+    @staticmethod
+    def fcontrast(surface: pygame.Surface, contrast=1.2, quality=EFFECTS_QUALITY):
+        if quality <= 0 or contrast == 1.0: return
+
+        pixels = pygame.surfarray.pixels3d(surface)
+
+        full_range = np.arange(256, dtype=np.float16)
+        lut = ((full_range - 128.0) * contrast + 128.0)
+
+        lut = np.clip(lut, 0, 255).astype(np.uint8)
+        flat_pixels = pixels.reshape(-1)
+
+        flat_pixels[...] = lut[flat_pixels]
+
+        del pixels
+
 
 class ParticleEmitter:
     def __init__(self, color=(0, 255, 255), count=1000, size=1, g=10, sparsity=0.75):
@@ -286,7 +388,9 @@ class ParticleEmitter:
             px = int(self.data[i, 0] - camera.x)
             py = int(self.data[i, 1] - camera.y)
             size = max(1, int(self.data[i, 4] * 5))
-            pygame.draw.circle(surface, self.color, (px, py), max(1, int(size * self.size)))
+            color = self.color if self.color != 'random' else (
+            random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+            pygame.draw.circle(surface, color, (px, py), max(1, int(size * self.size)))
 
 
 class FireflyEmitter(ParticleEmitter):
@@ -523,39 +627,52 @@ class Layer:
         self.effects: List[Tuple[Any, tuple]] = []
         self.visible = True
 
+        self._cached_surf = None
+
     def add_effect(self, effect_fn, *args):
         self.effects.append((effect_fn, args))
+
+    def _get_layer_surf(self, size: Tuple[int, int]) -> pygame.Surface:
+        if self._cached_surf is None or self._cached_surf.get_size() != size:
+            self._cached_surf = pygame.Surface(size, pygame.SRCALPHA)
+        return self._cached_surf
 
     def render(self, screen: pygame.Surface, camera: Camera, emitters=None):
         if not self.visible: return
 
-        if self.parallax == 0.0 and not self.effects:
+        if self.parallax == 0.0 and not self.effects and not emitters:
             for s in self.sprites:
                 screen.blit(s.surface, (int(s.x), int(s.y)))
-        else:
-            layer_surf = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-            layer_surf.fill((0, 0, 0, 0))
-            cx, cy = camera.x * self.parallax, camera.y * self.parallax
+            return
 
-            for s in self.sprites:
-                sx, sy = s.x - cx, s.y - cy
-                if -s.width < sx < screen.get_width() and -s.height < sy < screen.get_height():
-                    layer_surf.blit(s.surface, (int(sx), int(sy)))
+        screen_size = screen.get_size()
+        layer_surf = self._get_layer_surf(screen_size)
 
-            if emitters is not None:
-                for emitter in emitters:
-                    emitter.draw(layer_surf, camera)
+        layer_surf.fill((0, 0, 0, 0))
 
-            for effect_fn, args in self.effects:
-                effect_fn(layer_surf, *args)
+        cx, cy = camera.x * self.parallax, camera.y * self.parallax
+        screen_w, screen_h = screen_size
 
-            screen.blit(layer_surf, (0, 0))
+        for s in self.sprites:
+            sx, sy = s.x - cx, s.y - cy
+
+            if -s.width < sx < screen_w and -s.height < sy < screen_h:
+                layer_surf.blit(s.surface, (int(sx), int(sy)))
+
+        if emitters is not None:
+            for emitter in emitters:
+                emitter.draw(layer_surf, camera)
+
+        for effect_fn, args in self.effects:
+            effect_fn(layer_surf, *args)
+
+        screen.blit(layer_surf, (0, 0))
 
 
 class Game:
-    def __init__(self, w=200, h=300, title="Ortensia Engine"):
+    def __init__(self, w=200, h=300, title="Ortensia Engine", flag=pygame.RESIZABLE | pygame.SCALED | pygame.DOUBLEBUF):
         pygame.init()
-        self.screen = pygame.display.set_mode((w, h), pygame.SCALED | pygame.DOUBLEBUF)
+        self.screen = pygame.display.set_mode((w, h), flag)
         pygame.display.set_caption(title)
 
         self.clock = pygame.time.Clock()
@@ -564,7 +681,7 @@ class Game:
         self.particle_emitters = []
         self.particle_layer_idx = -1
         self.solids = []
-        self.grid = SpatialGrid(cell_size=160)
+        self.grid = SpatialGrid(cell_size=200)
         self.running = True
         self.max_fps = 600
         self.game_div = 1000.0
@@ -617,14 +734,14 @@ if __name__ == "__main__":
         return int(x * 1)
 
 
-    game = Game(s(1000), s(600))
+    game = Game(s(1000), s(600), flag=pygame.SCALED | pygame.RESIZABLE)
     bg2 = game.add_layer("Background2", 0.2)
     bg = game.add_layer("Background", 0.5)
     particles = game.add_layer("particles", 1.0)
     fg = game.add_layer("Foreground", 1.0)
 
-    particles.add_effect(PostProcessing.lumen, 10, 10, 2)
-    # fg.add_effect(PostProcessing.blur, 3)
+    particles.add_effect(PostProcessing.lumen, 10, 2)
+    fg.add_effect(PostProcessing.black_and_white)
     from functions import *
 
     # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
@@ -634,14 +751,14 @@ if __name__ == "__main__":
     game.solids.append(player)
     game.camera.target = player
 
-    emitter1 = ParticleEmitter(size=s(1.5), sparsity=0.2, g=40)
+    emitter1 = ParticleEmitter(size=s(1.5), sparsity=0.2, g=40, color='random')
     ff = FireflyEmitter(count=100, size=1)
     game.particle_emitters.append(ff)
     game.particle_emitters.append(emitter1)
 
     for _ in range(30):
         ff.emit(random.randint(0, 1000), random.randint(200, 500), 1)
-
+        pass
     game.particle_layer_idx = 2
 
     for i in range(15):
