@@ -1,7 +1,7 @@
 import pygame
 from typing import Optional, Callable, Tuple
 from dataclasses import dataclass
-from base import *
+from Graphic.base import *
 
 
 class Sprite:
