@@ -6,7 +6,7 @@ import random
 import math
 
 PARTICLE_EMISSION_QUALITY = 1
-EFFECTS_QUALITY = 2
+EFFECTS_QUALITY = 3
 
 
 class PostProcessing:
@@ -590,19 +590,100 @@ class SolidSprite(Sprite):
         self.x, self.y = self.frect.x, self.frect.y
 
 
+class FluidSprite(Sprite):
+    def __init__(self, x, y, w, h, resolution=4, color=(50, 150, 255, 150)):
+        self.headroom = h // 2
+        super().__init__(x, y - self.headroom, w, h + self.headroom)
+
+        self.color = color
+        self.surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+
+        self.k = 0.015
+        self.damp = 0.025
+        self.spread = 0.15
+
+        self.count = w // resolution
+        self.column_width = resolution
+
+        self.sea_level = self.headroom
+        self.target_y = np.full(self.count, self.sea_level, dtype=np.float16)
+        self.curr_y = np.full(self.count, self.sea_level, dtype=np.float16)
+        self.vel = np.zeros(self.count, dtype=np.float16)
+
+    def splash(self, x_pos, velocity):
+        local_x = x_pos - self.x
+        idx = int(local_x // self.column_width)
+        if 0 <= idx < self.count:
+            self.vel[idx] += velocity
+
+    def get_height_at(self, world_x):
+        """Returns the world-Y coordinate of the water surface at a given X."""
+        local_x = world_x - self.x
+        idx = int(local_x // self.column_width)
+        if 0 <= idx < self.count:
+            return self.curr_y[idx] + self.y
+        return self.y + self.sea_level
+
+    def update(self, interactors: List[Any] = None):
+        force = -self.k * (self.curr_y - self.target_y) - self.damp * self.vel
+        self.vel += force
+        self.curr_y += self.vel
+
+        left_deltas = np.zeros_like(self.curr_y)
+        right_deltas = np.zeros_like(self.curr_y)
+        left_deltas[1:] = self.spread * (self.curr_y[1:] - self.curr_y[:-1])
+        right_deltas[:-1] = self.spread * (self.curr_y[:-1] - self.curr_y[1:])
+        self.vel -= left_deltas
+        self.vel -= right_deltas
+
+        if interactors:
+            for obj in interactors:
+                if self.x < obj.x + obj.width / 2 < self.x + self.width:
+                    water_line = self.get_height_at(obj.x + obj.width / 2)
+                    obj_bottom = obj.y + obj.height
+
+                    if obj_bottom > water_line:
+                        if abs(obj_bottom - water_line) < 10:
+                            self.splash(obj.x + obj.width / 2, 5)
+
+                        depth = obj_bottom - water_line
+                        buoyancy_force = depth * 0.5
+
+                        if hasattr(obj, 'frect'):
+                            pass
+
+        self._draw_fluid()
+
+    def _draw_fluid(self):
+        self.surface.fill((0, 0, 0, 0))
+        x_coords = np.arange(0, self.count) * self.column_width
+
+        top_points = np.stack((x_coords, self.curr_y), axis=-1)
+        bottom_right = [[self.width, self.height]]
+        bottom_left = [[0, self.height]]
+        full_poly = np.concatenate([top_points, bottom_right, bottom_left])
+
+        pygame.draw.polygon(self.surface, self.color, full_poly.tolist())
+
+        if len(top_points) > 1:
+            pygame.draw.lines(self.surface, (255, 255, 255), False, top_points.tolist(), 2)
+
+
 class AnimatedSolidSprite(SolidSprite):
-    def __init__(self, x, y, w, h):
+    def __init__(self, x, y, w, h, gw=None, gh=None):
         super().__init__(x, y, w, h, (0, 0, 0, 0))
         self.animations = {}
         self.current_state = 'idle'
         self.frame_index = 0.0
         self.animation_speed = 12.0
         self.frect = pygame.FRect(x, y, w, h)
+        self.gw = gw if gw is not None else w
+        self.gh = gh if gh is not None else h
 
     def add_animation(self, name, frames):
         scaled_frames = []
         for f in frames:
-            scaled_f = pygame.transform.scale(f, (self.width, self.height))
+            scaled_f = pygame.transform.scale(f, (self.gw, self.gh))
             scaled_frames.append(scaled_f.convert_alpha())
         self.animations[name] = scaled_frames
 
@@ -674,6 +755,8 @@ class Game:
         pygame.init()
         self.screen = pygame.display.set_mode((w, h), flag)
         pygame.display.set_caption(title)
+        icon_surf = pygame.image.load("../examples/Ortensia1.png").convert_alpha()
+        pygame.display.set_icon(icon_surf)
 
         self.clock = pygame.time.Clock()
         self.camera = Camera(width=w, height=h)
@@ -741,13 +824,16 @@ if __name__ == "__main__":
     fg = game.add_layer("Foreground", 1.0)
 
     particles.add_effect(PostProcessing.lumen, 10, 2)
-    fg.add_effect(PostProcessing.black_and_white)
+    # fg.add_effect(PostProcessing.blur, 0.5)
+    # fg.add_effect(PostProcessing.black_and_white)
     from functions import *
 
     # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
-    player = AnimatedSolidSprite(s(400), s(300), s(40), s(40))
-    player.add_animation('idle', load_spritesheet("examples/Hare_Run.png", 32, 32, row=3))
+    player = AnimatedSolidSprite(s(400), s(300), s(64), s(64), 64, 64)
+    player.add_animation('idle', load_spritesheet("examples/AuryRunning.png", 64, 64, row=0))
     fg.sprites.append(player)
+    water = FluidSprite(s(200), s(500), s(600), s(100), color=(50, 150, 255, 180))
+    fg.sprites.append(water)
     game.solids.append(player)
     game.camera.target = player
 
@@ -771,7 +857,7 @@ if __name__ == "__main__":
         if i % 3 == 0:
             wall = SolidSprite(i * s(400), s(450), s(60), s(150), (255, 20, 50))
             fg.sprites.append(wall)
-            game.solids.append(wall)  # Register as a solid obstacle
+            game.solids.append(wall)
         else:
             wall = Sprite(i * s(400), s(450), s(60), s(150), (30, 70, 40))
             fg.sprites.append(wall)
@@ -779,7 +865,7 @@ if __name__ == "__main__":
 
     def my_update(game_inst, dt):
         keys = pygame.key.get_pressed()
-        speed = 500 * dt * 0.5
+        speed = 900 * dt * 0.5
 
         dx, dy = 0, 0
         if keys[pygame.K_LEFT]:  dx -= speed
@@ -791,6 +877,7 @@ if __name__ == "__main__":
 
         player.move(dx, dy, game_inst.grid)
         player.update_animation(dt)
+        water.update(interactors=[player])
 
         emitter1.emit(player.x + s(20), player.y + s(20))
 
