@@ -25,7 +25,10 @@ GIF quality is of course very bad, but you can imagine come on:
 ## Animation, Particle Emission, Lumen Effect, Water Simulation and parallax
 ![OrtensiaWaterUpdate.gif](examples%2FOrtensiaWaterUpdate.gif)
 
-## Better Quality _Lumen_ effect, on Animated sprite, and camera shake (@ 200FPS)
+## Subwater Effect added on top, and we're still at around 95 FPS with max quality
+![ortensiasubwatery.gif](examples%2Fortensiasubwatery.gif)
+
+## Better Quality _Lumen_ effect, on Animated sprite, and camera shake (@ 200FPS) mid quality
 ![OrtensiaHQlumen.gif](examples%2FOrtensiaHQlumen.gif)
 
 ### Mid Quality _Bloom_:

@@ -4,9 +4,11 @@ from typing import Optional, Tuple, List, Any
 from dataclasses import dataclass
 import random
 import math
+import datetime
 
 PARTICLE_EMISSION_QUALITY = 1
-EFFECTS_QUALITY = 3
+EFFECTS_QUALITY = 2
+
 
 
 class PostProcessing:
@@ -145,7 +147,6 @@ class PostProcessing:
 
         size = surface.get_size()
 
-        # --- BRANCH: FAST LOWER QUALITY (quality == 1) ---
         if quality == 1:
             # Scale down aggressively (32x) for speed
             small_size = (max(1, size[0] // 32), max(1, size[1] // 32))
@@ -161,32 +162,27 @@ class PostProcessing:
             surface.blit(final_lumen, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
             return
 
-        # --- BRANCH: STANDARD/HIGH QUALITY (quality > 1) ---
         scale = [0, 32, 16, 8, 4, 1][quality]
+        intensity = int(intensity * 6/(quality+1))
         small_size = (max(1, size[0] // scale), max(1, size[1] // scale))
         source_surf = pygame.transform.smoothscale(surface, small_size)
 
         pixels = pygame.surfarray.array3d(source_surf).astype(np.float16)
 
-        # Calculate luma to isolate the 'hot' spots
         luma = (pixels[..., 0] * 0.299 + pixels[..., 1] * 0.587 + pixels[..., 2] * 0.114)
         mask = luma > threshold
 
-        # Apply Intensity AND Tint
         emissive_pixels = np.zeros_like(pixels)
         tint_array = np.array(tint, dtype=np.float16) / 255.0
         emissive_pixels[mask] = pixels[mask] * intensity * tint_array
 
-        # Create the glow buffer
         glow_buffer = pygame.Surface(small_size, pygame.SRCALPHA)
         np.clip(emissive_pixels, 0, 255, out=emissive_pixels)
         pygame.surfarray.blit_array(glow_buffer, emissive_pixels.astype(np.uint8))
 
-        # Generate alpha based on brightness to ensure smooth light falloff
         new_alphas = np.clip(np.max(emissive_pixels, axis=2) * 1.5, 0, 255).astype(np.uint8)
         pygame.surfarray.pixels_alpha(glow_buffer)[...] = new_alphas
 
-        # Final upscale (the 'Lumen' bleed)
         final_lumen = pygame.transform.smoothscale(glow_buffer, size)
         surface.blit(final_lumen, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
 
@@ -348,6 +344,30 @@ class PostProcessing:
         flat_pixels[...] = lut[flat_pixels]
 
         del pixels
+
+    @staticmethod
+    def underwater_distortion(surface: pygame.Surface, amplitude=5, frequency=0.05,
+                              quality=EFFECTS_QUALITY):
+        if quality <= 0: return
+        time_val = datetime.datetime.now().microsecond * 1e-6 * 2 * np.pi
+
+        source = surface.copy()
+        surface.fill((0, 0, 0, 0))  # Clear the target
+
+        width, height = surface.get_size()
+
+        slice_h = [0, 8, 4, 2, 1, 1][quality]
+
+        for y in range(0, height, slice_h):
+            shift = int(math.sin(y * frequency + time_val) * amplitude)
+
+            src_rect = pygame.Rect(0, y, width, slice_h)
+
+            surface.blit(source, (shift, y), src_rect)
+            if shift > 0:
+                surface.blit(source, (shift - width, y), src_rect)
+            elif shift < 0:
+                surface.blit(source, (shift + width, y), src_rect)
 
 
 class ParticleEmitter:
@@ -814,7 +834,7 @@ class Game:
 
 if __name__ == "__main__":
     def s(x):
-        return int(x * 1)
+        return int(x * 1.25)
 
 
     game = Game(s(1000), s(600), flag=pygame.SCALED | pygame.RESIZABLE)
@@ -823,13 +843,13 @@ if __name__ == "__main__":
     particles = game.add_layer("particles", 1.0)
     fg = game.add_layer("Foreground", 1.0)
 
-    particles.add_effect(PostProcessing.lumen, 10, 2)
-    # fg.add_effect(PostProcessing.blur, 0.5)
+    fg.add_effect(PostProcessing.underwater_distortion, 5)
+    particles.add_effect(PostProcessing.lumen, 20, 3)
     # fg.add_effect(PostProcessing.black_and_white)
     from functions import *
 
     # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
-    player = AnimatedSolidSprite(s(400), s(300), s(64), s(64), 64, 64)
+    player = AnimatedSolidSprite(s(400), s(300), s(64), s(64))
     player.add_animation('idle', load_spritesheet("examples/AuryRunning.png", 64, 64, row=0))
     fg.sprites.append(player)
     water = FluidSprite(s(200), s(500), s(600), s(100), color=(50, 150, 255, 180))
