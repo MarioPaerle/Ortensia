@@ -7,8 +7,7 @@ import math
 import datetime
 
 PARTICLE_EMISSION_QUALITY = 1
-EFFECTS_QUALITY = 2
-
+EFFECTS_QUALITY = 3
 
 
 class PostProcessing:
@@ -163,7 +162,7 @@ class PostProcessing:
             return
 
         scale = [0, 32, 16, 8, 4, 1][quality]
-        intensity = int(intensity * 6/(quality+1))
+        intensity = int(intensity * 6 / (quality + 1))
         small_size = (max(1, size[0] // scale), max(1, size[1] // scale))
         source_surf = pygame.transform.smoothscale(surface, small_size)
 
@@ -352,11 +351,11 @@ class PostProcessing:
         time_val = datetime.datetime.now().microsecond * 1e-6 * 2 * np.pi
 
         source = surface.copy()
-        surface.fill((0, 0, 0, 0))  # Clear the target
+        surface.fill((0, 0, 0, 0))
 
         width, height = surface.get_size()
 
-        slice_h = [0, 8, 4, 2, 1, 1][quality]
+        slice_h = [0, 16, 8, 4, 2, 1][quality]
 
         for y in range(0, height, slice_h):
             shift = int(math.sin(y * frequency + time_val) * amplitude)
@@ -371,17 +370,27 @@ class PostProcessing:
 
 
 class ParticleEmitter:
-    def __init__(self, color=(0, 255, 255), count=1000, size=1, g=10, sparsity=0.75):
+    def __init__(self, color=(0, 255, 255), count=1000, size=1, g=10, sparsity=0.75, deltax=0, deltay=0):
         self.color = color
         self.data = np.zeros((int(count * PARTICLE_EMISSION_QUALITY), 5))  # [x, y, vx, vy, life]
         self.active = np.zeros(int(count * PARTICLE_EMISSION_QUALITY), dtype=bool)
         self.g = g
         self.sparsity = sparsity
         self.size = size
+        self.tracking = None
+        self.deltax = deltax
+        self.deltay = deltay
 
-    def emit(self, x, y, amount=5):
+    def track(self, obj):
+        assert hasattr(obj, 'x') and hasattr(obj, 'y')
+        self.tracking = obj
+
+    def emit(self, x=None, y=None, amount=5):
+        if x is None and y is None and self.tracking is not None:
+            x, y = self.tracking.x + self.deltax, self.tracking.y + self.deltay
         inactive = np.where(~self.active)[0]
-        if len(inactive) == 0: return
+        if len(inactive) == 0:
+            return
 
         idx = inactive[:amount]
         actual_count = len(idx)
@@ -393,6 +402,8 @@ class ParticleEmitter:
         self.active[idx] = True
 
     def update(self, dt):
+        if self.tracking is not None:
+            self.emit()
         if not np.any(self.active): return
 
         self.data[self.active, 3] += self.g * dt
@@ -402,6 +413,7 @@ class ParticleEmitter:
         self.data[self.active, 4] -= dt
         self.active &= (self.data[:, 4] > 0)
 
+
     def draw(self, surface, camera):
         indices = np.where(self.active)[0]
         for i in indices:
@@ -409,7 +421,7 @@ class ParticleEmitter:
             py = int(self.data[i, 1] - camera.y)
             size = max(1, int(self.data[i, 4] * 5))
             color = self.color if self.color != 'random' else (
-            random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+                random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
             pygame.draw.circle(surface, color, (px, py), max(1, int(size * self.size)))
 
 
@@ -530,14 +542,12 @@ class AnimatedSprite(Sprite):
 
     def move(self, dx, dy, grid):
         """Integrated with your SolidSprite logic."""
-        # Horizontal
         self.frect.x += dx
         for other in grid.get_nearby(self.frect):
             if other is not self and self.frect.colliderect(other.frect):
                 if dx > 0: self.frect.right = other.frect.left
                 if dx < 0: self.frect.left = other.frect.right
 
-        # Vertical
         self.frect.y += dy
         for other in grid.get_nearby(self.frect):
             if other is not self and self.frect.colliderect(other.frect):
@@ -546,7 +556,6 @@ class AnimatedSprite(Sprite):
 
         self.x, self.y = self.frect.x, self.frect.y
 
-        # Logic to pick state based on movement
         if dx != 0 or dy != 0:
             self.set_state("walk")
         else:
@@ -619,7 +628,7 @@ class FluidSprite(Sprite):
         self.surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
 
         self.k = 0.015
-        self.damp = 0.025
+        self.damp = 0.015
         self.spread = 0.15
 
         self.count = w // resolution
@@ -721,7 +730,7 @@ class AnimatedSolidSprite(SolidSprite):
 
 
 class Layer:
-    def __init__(self, name: str, parallax: float = 1.0):
+    def __init__(self, name: str, parallax: float = 1.0, **kwargs):
         self.name = name
         self.parallax = parallax
         self.sprites: List[Sprite] = []
@@ -758,6 +767,85 @@ class Layer:
             sx, sy = s.x - cx, s.y - cy
 
             if -s.width < sx < screen_w and -s.height < sy < screen_h:
+                if hasattr(s, 'update'):
+                    s.update()
+                layer_surf.blit(s.surface, (int(sx), int(sy)))
+
+        if emitters is not None:
+            for emitter in emitters:
+                emitter.draw(layer_surf, camera)
+
+        for effect_fn, args in self.effects:
+            effect_fn(layer_surf, *args)
+
+        screen.blit(layer_surf, (0, 0))
+
+
+class ChunkedLayer:
+    def __init__(self, name: str, parallax: float = 1.0, chunk_size: int = 500):
+        self.name = name
+        self.parallax = parallax
+        self.visible = True
+        self.chunk_size = chunk_size
+
+        self.chunks = {}
+        self.sprites = []
+
+        self.effects: List[Tuple[Any, tuple]] = []
+        self._cached_surf = None
+
+    def add_effect(self, effect_fn, *args):
+        self.effects.append((effect_fn, args))
+
+    def add_static(self, sprite):
+        cx = int(sprite.x // self.chunk_size)
+        cy = int(sprite.y // self.chunk_size)
+
+        if (cx, cy) not in self.chunks:
+            self.chunks[(cx, cy)] = []
+        self.chunks[(cx, cy)].append(sprite)
+
+    def add_dynamic(self, sprite):
+        self.sprites.append(sprite)
+
+    def _get_layer_surf(self, size: Tuple[int, int]) -> pygame.Surface:
+        if self._cached_surf is None or self._cached_surf.get_size() != size:
+            self._cached_surf = pygame.Surface(size, pygame.SRCALPHA)
+        return self._cached_surf
+
+    def render(self, screen: pygame.Surface, camera: Camera, emitters=None):
+        if not self.visible: return
+
+        screen_size = screen.get_size()
+        screen_w, screen_h = screen_size
+
+        cx, cy = camera.x * self.parallax, camera.y * self.parallax
+
+        layer_surf = self._get_layer_surf(screen_size)
+        layer_surf.fill((0, 0, 0, 0))
+
+        start_chunk_x = int(cx // self.chunk_size)
+        end_chunk_x = int((cx + screen_w) // self.chunk_size) + 1
+
+        start_chunk_y = int(cy // self.chunk_size)
+        end_chunk_y = int((cy + screen_h) // self.chunk_size) + 1
+
+        for x in range(start_chunk_x - 1, end_chunk_x + 1):
+            for y in range(start_chunk_y - 1, end_chunk_y + 1):
+                chunk_key = (x, y)
+                if chunk_key in self.chunks:
+                    for s in self.chunks[chunk_key]:
+                        sx = s.x - cx
+                        sy = s.y - cy
+                        if -s.width < sx < screen_w and -s.height < sy < screen_h:
+                            layer_surf.blit(s.surface, (int(sx), int(sy)))
+
+        for s in self.sprites:
+            sx = s.x - cx
+            sy = s.y - cy
+            if -s.width < sx < screen_w and -s.height < sy < screen_h:
+                if hasattr(s, 'update'):
+                    s.update()
                 layer_surf.blit(s.surface, (int(sx), int(sy)))
 
         if emitters is not None:
@@ -771,15 +859,16 @@ class Layer:
 
 
 class Game:
-    def __init__(self, w=200, h=300, title="Ortensia Engine", flag=pygame.RESIZABLE | pygame.SCALED | pygame.DOUBLEBUF):
+    def __init__(self, w=200, h=300, title="Ortensia Engine", flag=pygame.RESIZABLE | pygame.SCALED | pygame.DOUBLEBUF, icon=None):
         pygame.init()
         self.screen = pygame.display.set_mode((w, h), flag)
         pygame.display.set_caption(title)
-        icon_surf = pygame.image.load("../examples/Ortensia1.png").convert_alpha()
-        pygame.display.set_icon(icon_surf)
+        if icon is not None:
+            icon_surf = pygame.image.load(icon).convert_alpha()
+            pygame.display.set_icon(icon_surf)
 
         self.clock = pygame.time.Clock()
-        self.camera = Camera(width=w, height=h)
+        self.main_camera = Camera(width=w, height=h)
         self.layers: List[Layer] = []
         self.particle_emitters = []
         self.particle_layer_idx = -1
@@ -789,10 +878,10 @@ class Game:
         self.max_fps = 600
         self.game_div = 1000.0
         self.scale = 1
+        self.layer_type = ChunkedLayer
 
-    def add_layer(self, name, parallax=1.0) -> Layer:
-        """Helper to create and track a layer."""
-        l = Layer(name, parallax)
+    def add_layer(self, name, parallax=1.0, chunk_size=30) -> Layer:
+        l = self.layer_type(name, parallax, chunk_size=chunk_size)
         self.layers.append(l)
         return l
 
@@ -809,7 +898,7 @@ class Game:
                 self.grid.insert(obj)
 
             update_callback(self, dt)
-            self.camera.update()
+            self.main_camera.update()
 
             for emitter in self.particle_emitters:
                 emitter.update(dt)
@@ -818,13 +907,13 @@ class Game:
 
             for i, layer in enumerate(self.layers):
                 if self.particle_layer_idx != -1 and self.particle_layer_idx == i:
-                    layer.render(self.screen, self.camera, emitters=self.particle_emitters)
+                    layer.render(self.screen, self.main_camera, emitters=self.particle_emitters)
                 else:
-                    layer.render(self.screen, self.camera)
+                    layer.render(self.screen, self.main_camera)
 
             if self.particle_layer_idx == -1:
                 for emitter in self.particle_emitters:
-                    emitter.draw(self.screen, self.camera)
+                    emitter.draw(self.screen, self.main_camera)
 
             fps = self.clock.get_fps()
             pygame.display.set_caption(f"Ortensia | FPS: {int(fps)}")
@@ -834,7 +923,7 @@ class Game:
 
 if __name__ == "__main__":
     def s(x):
-        return int(x * 1.25)
+        return int(x * 1)
 
 
     game = Game(s(1000), s(600), flag=pygame.SCALED | pygame.RESIZABLE)
@@ -843,7 +932,7 @@ if __name__ == "__main__":
     particles = game.add_layer("particles", 1.0)
     fg = game.add_layer("Foreground", 1.0)
 
-    fg.add_effect(PostProcessing.underwater_distortion, 5)
+    # fg.add_effect(PostProcessing.underwater_distortion, 5)
     particles.add_effect(PostProcessing.lumen, 20, 3)
     # fg.add_effect(PostProcessing.black_and_white)
     from functions import *
@@ -852,10 +941,10 @@ if __name__ == "__main__":
     player = AnimatedSolidSprite(s(400), s(300), s(64), s(64))
     player.add_animation('idle', load_spritesheet("examples/AuryRunning.png", 64, 64, row=0))
     fg.sprites.append(player)
-    water = FluidSprite(s(200), s(500), s(600), s(100), color=(50, 150, 255, 180))
+    water = FluidSprite(s(200), s(500), s(600), s(100), color=(50, 100, 255, 120))
     fg.sprites.append(water)
     game.solids.append(player)
-    game.camera.target = player
+    game.main_camera.target = player
 
     emitter1 = ParticleEmitter(size=s(1.5), sparsity=0.2, g=40, color='random')
     ff = FireflyEmitter(count=100, size=1)
@@ -893,7 +982,7 @@ if __name__ == "__main__":
         if keys[pygame.K_UP]:    dy -= speed
         if keys[pygame.K_DOWN]:  dy += speed
         if keys[pygame.K_SPACE]:
-            game.camera.shake_intensity = 5
+            game.main_camera.shake_intensity = 5
 
         player.move(dx, dy, game_inst.grid)
         player.update_animation(dt)
