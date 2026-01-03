@@ -363,6 +363,41 @@ class PostProcessing:
             elif shift < 0:
                 surface.blit(source, (shift + width, y), src_rect)
 
+    @staticmethod
+    def motion_blur(surface: pygame.Surface, camera: Camera, strength_scale=1.0, quality=EFFECTS_QUALITY):
+        if quality <= 0: return
+
+        # 1. Get Velocity
+        vx = camera.velocity_x * strength_scale
+        vy = camera.velocity_y * strength_scale
+
+        magnitude = math.sqrt(vx ** 2 + vy ** 2)
+
+        if magnitude < 0.5:
+            return
+
+        samples = [1, 2, 4, 8, 12, 16][min(quality, 5)]
+
+        max_blur = 60
+        if magnitude > max_blur:
+            scale_factor = max_blur / magnitude
+            vx *= scale_factor
+            vy *= scale_factor
+
+        ghost = surface.copy()
+
+        alpha = max(40, int(150 / samples))
+        ghost.set_alpha(alpha)
+        # -------------------
+
+        step_x = vx / samples
+        step_y = vy / samples
+
+        for i in range(1, samples + 1):
+            offset_x = -step_x * i
+            offset_y = -step_y * i
+            surface.blit(ghost, (offset_x, offset_y))
+
 
 class ParticleEmitter:
     def __init__(self, color=(0, 255, 255), count=1000, size=1, g=10, sparsity=0.75, deltax=0, deltay=0):

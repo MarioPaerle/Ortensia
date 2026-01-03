@@ -102,7 +102,7 @@ bg = game.add_create_layer("Background", 0.5)
 particles = game.add_create_layer("particles", 1.0)
 # fg = game.add_layer("Foreground", 1.0)
 
-fg = LitLayer("Foreground", 1.0, ambient_color=(30, 30, 50)) # Dark ambient
+fg = LitLayer("Foreground", 1.0, ambient_color=(100, 100, 100)) # Dark ambient
 game.add_layer(fg)
 
 wall_lamp3 = LightSource(s(130), s(400), radius=s(200), color=(255, 60, 60), falloff=0.99, steps=100)
@@ -114,6 +114,7 @@ fg.add_light(wall_lamp3)
 
 # fg.add_effect(PostProcessing.underwater_distortion, 5)
 particles.add_effect(PostProcessing.lumen, 40, 5)
+fg.add_effect(PostProcessing.motion_blur, game.main_camera, 3.5)
 # fg.add_effect(PostProcessing.black_and_white)
 
 # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))

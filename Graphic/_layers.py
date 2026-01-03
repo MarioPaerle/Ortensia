@@ -15,14 +15,16 @@ class Camera:
     target: Optional[Any] = None
     smooth: float = 0.1
 
-    # New Shake Properties
     shake_intensity: float = 0.0
     shake_decay: float = 0.9  # How fast the shake stops (0.9 = 10% per frame)
+    velocity_x: float = 0.0
+    velocity_y: float = 0.0
 
     def apply_shake(self, intensity: float):
         self.shake_intensity = intensity
 
     def update(self):
+        prev_x, prev_y = self.x, self.y
         if self.target:
             tx = self.target.x - self.width // 2
             ty = self.target.y - self.height // 2
@@ -35,6 +37,9 @@ class Camera:
             self.shake_intensity *= self.shake_decay
         else:
             self.shake_intensity = 0
+
+        self.velocity_x = self.x - prev_x
+        self.velocity_y = self.y - prev_y
 
 
 class Layer:

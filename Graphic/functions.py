@@ -18,6 +18,7 @@ def load_spritesheet(filename, frame_w, frame_h, row='all', scale=(1, 1)):
 
     return [pygame.transform.scale_by(f, factor=scale) for f in frames]
 
+
 def scale_color(color, factor):
     return [min(255, max(0, int(color[i]*factor))) for i in range(len(color))]
 
