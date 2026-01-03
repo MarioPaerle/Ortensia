@@ -25,6 +25,9 @@ GIF quality is of course very bad, but you can imagine come on:
 ## Animation, Particle Emission, Lumen Effect, Water Simulation and parallax
 ![OrtensiaWaterUpdate.gif](examples%2FOrtensiaWaterUpdate.gif)
 
+## Also Simple Standing Chroma Lights are Efficiently computed
+![OrtensiLighting.gif](examples%2FOrtensiLighting.gif)
+
 ## Subwater Effect added on top, and we're still at around 95 FPS with max quality
 ![ortensiasubwatery.gif](examples%2Fortensiasubwatery.gif)
 

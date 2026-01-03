@@ -1,7 +1,7 @@
 import pygame
 
 
-def load_spritesheet(filename, frame_w, frame_h, row='all'):
+def load_spritesheet(filename, frame_w, frame_h, row='all', scale=(1, 1)):
     if row == 'all':
         sheet = pygame.image.load(filename).convert_alpha()
         frames = []
@@ -16,5 +16,8 @@ def load_spritesheet(filename, frame_w, frame_h, row='all'):
             frame = sheet.subsurface(pygame.Rect(x, row*frame_h, frame_w, frame_h))
             frames.append(frame)
 
+    return [pygame.transform.scale_by(f, factor=scale) for f in frames]
 
-    return frames
+def scale_color(color, factor):
+    return [min(255, max(0, int(color[i]*factor))) for i in range(len(color))]
+

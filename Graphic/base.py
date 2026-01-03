@@ -1,10 +1,8 @@
-import pygame
+from Graphic._layers import *
 import numpy as np
-from typing import Optional, Tuple, List, Any
-from dataclasses import dataclass
-import random
 import math
 import datetime
+
 
 PARTICLE_EMISSION_QUALITY = 1
 EFFECTS_QUALITY = 3
@@ -287,11 +285,8 @@ class PostProcessing:
     def black_and_white(surface: pygame.Surface, intensity=1.0, quality=EFFECTS_QUALITY):
         if quality <= 0 or intensity <= 0: return
 
-        # Use pixels3d to get a direct view (no copying)
         pixels = pygame.surfarray.pixels3d(surface)
 
-        # Fast Integer Luma: (R+G+B) // 3 is much faster than dot products
-        # We use a bit-shift for the average to stay on the CPU's fast path
         r, g, b = pixels[..., 0], pixels[..., 1], pixels[..., 2]
 
         # Standard weighted luma without float conversion
@@ -469,395 +464,6 @@ class FireflyEmitter(ParticleEmitter):
                 pygame.draw.circle(surface, glow_color, (px, py), current_size * 2)
 
 
-@dataclass
-class Camera:
-    x: float = 0.0
-    y: float = 0.0
-    width: int = 800
-    height: int = 600
-    target: Optional[Any] = None
-    smooth: float = 0.1
-
-    # New Shake Properties
-    shake_intensity: float = 0.0
-    shake_decay: float = 0.9  # How fast the shake stops (0.9 = 10% per frame)
-
-    def apply_shake(self, intensity: float):
-        self.shake_intensity = intensity
-
-    def update(self):
-        if self.target:
-            tx = self.target.x - self.width // 2
-            ty = self.target.y - self.height // 2
-            self.x += (tx - self.x) * self.smooth
-            self.y += (ty - self.y) * self.smooth
-
-        if self.shake_intensity > 0.1:
-            self.x += random.uniform(-self.shake_intensity, self.shake_intensity)
-            self.y += random.uniform(-self.shake_intensity, self.shake_intensity)
-            self.shake_intensity *= self.shake_decay
-        else:
-            self.shake_intensity = 0
-
-
-class Sprite:
-    def __init__(self, x, y, w, h, color=(255, 255, 255)):
-        self.x, self.y, self.width, self.height = x, y, w, h
-        self.surface = pygame.Surface((w, h))
-        self.surface.fill(color)
-
-    def move(self, dx, dy):
-        self.x += dx
-        self.y += dy
-
-
-class AnimatedSprite(Sprite):
-    def __init__(self, x, y, w, h):
-        super().__init__(x, y, w, h)
-        self.animations = {}  # Store lists of frames: {"idle": [surf1, surf2], "walk": [...]}
-        self.current_state = "idle"
-        self.frame_index = 0.0
-        self.animation_speed = 10.0  # Frames per second
-        self.frect = pygame.FRect(x, y, w, h)  # For compatibility with your new collision system
-
-    def add_animation(self, name: str, frames: List[pygame.Surface]):
-        """Register a list of surfaces for a specific state."""
-        self.animations[name] = frames
-
-    def update_animation(self, dt):
-        """Advances the frame index based on time."""
-        if self.current_state in self.animations:
-            self.frame_index += self.animation_speed * dt
-
-            if self.frame_index >= len(self.animations[self.current_state]):
-                self.frame_index = 0
-
-            current_frame = int(self.frame_index)
-            self.surface = self.animations[self.current_state][current_frame]
-
-    def set_state(self, state: str):
-        if self.current_state != state:
-            self.current_state = state
-            self.frame_index = 0.0
-
-    def move(self, dx, dy, grid):
-        """Integrated with your SolidSprite logic."""
-        self.frect.x += dx
-        for other in grid.get_nearby(self.frect):
-            if other is not self and self.frect.colliderect(other.frect):
-                if dx > 0: self.frect.right = other.frect.left
-                if dx < 0: self.frect.left = other.frect.right
-
-        self.frect.y += dy
-        for other in grid.get_nearby(self.frect):
-            if other is not self and self.frect.colliderect(other.frect):
-                if dy > 0: self.frect.bottom = other.frect.top
-                if dy < 0: self.frect.top = other.frect.bottom
-
-        self.x, self.y = self.frect.x, self.frect.y
-
-        if dx != 0 or dy != 0:
-            self.set_state("walk")
-        else:
-            self.set_state("idle")
-
-
-class SpatialGrid:
-    def __init__(self, cell_size=128):
-        self.cell_size = cell_size
-        self.cells = {}
-
-    def clear(self):
-        self.cells.clear()
-
-    def insert(self, sprite):
-        # Calculate cell range the sprite occupies
-        x_start = int(sprite.frect.left // self.cell_size)
-        x_end = int(sprite.frect.right // self.cell_size)
-        y_start = int(sprite.frect.top // self.cell_size)
-        y_end = int(sprite.frect.bottom // self.cell_size)
-
-        for x in range(x_start, x_end + 1):
-            for y in range(y_start, y_end + 1):
-                self.cells.setdefault((x, y), []).append(sprite)
-
-    def get_nearby(self, frect):
-        x_start = int(frect.left // self.cell_size)
-        x_end = int(frect.right // self.cell_size)
-        y_start = int(frect.top // self.cell_size)
-        y_end = int(frect.bottom // self.cell_size)
-
-        nearby = []
-        for x in range(x_start, x_end + 1):
-            for y in range(y_start, y_end + 1):
-                if (x, y) in self.cells:
-                    nearby.extend(self.cells[(x, y)])
-        return nearby
-
-
-class SolidSprite(Sprite):
-    def __init__(self, x, y, w, h, color=(255, 255, 255)):
-        super().__init__(x, y, w, h, color)
-        self.frect = pygame.FRect(x, y, w, h)
-
-    def move(self, dx, dy, grid):
-        # Horizontal Move & Resolve
-        self.frect.x += dx
-        for other in grid.get_nearby(self.frect):
-            if other is not self and self.frect.colliderect(other.frect):
-                if dx > 0: self.frect.right = other.frect.left
-                if dx < 0: self.frect.left = other.frect.right
-
-        # Vertical Move & Resolve
-        self.frect.y += dy
-        for other in grid.get_nearby(self.frect):
-            if other is not self and self.frect.colliderect(other.frect):
-                if dy > 0: self.frect.bottom = other.frect.top
-                if dy < 0: self.frect.top = other.frect.bottom
-
-        # Sync back to base Sprite properties for rendering
-        self.x, self.y = self.frect.x, self.frect.y
-
-
-class FluidSprite(Sprite):
-    def __init__(self, x, y, w, h, resolution=4, color=(50, 150, 255, 150)):
-        self.headroom = h // 2
-        super().__init__(x, y - self.headroom, w, h + self.headroom)
-
-        self.color = color
-        self.surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-
-        self.k = 0.015
-        self.damp = 0.015
-        self.spread = 0.15
-
-        self.count = w // resolution
-        self.column_width = resolution
-
-        self.sea_level = self.headroom
-        self.target_y = np.full(self.count, self.sea_level, dtype=np.float16)
-        self.curr_y = np.full(self.count, self.sea_level, dtype=np.float16)
-        self.vel = np.zeros(self.count, dtype=np.float16)
-
-    def splash(self, x_pos, velocity):
-        local_x = x_pos - self.x
-        idx = int(local_x // self.column_width)
-        if 0 <= idx < self.count:
-            self.vel[idx] += velocity
-
-    def get_height_at(self, world_x):
-        """Returns the world-Y coordinate of the water surface at a given X."""
-        local_x = world_x - self.x
-        idx = int(local_x // self.column_width)
-        if 0 <= idx < self.count:
-            return self.curr_y[idx] + self.y
-        return self.y + self.sea_level
-
-    def update(self, interactors: List[Any] = None):
-        force = -self.k * (self.curr_y - self.target_y) - self.damp * self.vel
-        self.vel += force
-        self.curr_y += self.vel
-
-        left_deltas = np.zeros_like(self.curr_y)
-        right_deltas = np.zeros_like(self.curr_y)
-        left_deltas[1:] = self.spread * (self.curr_y[1:] - self.curr_y[:-1])
-        right_deltas[:-1] = self.spread * (self.curr_y[:-1] - self.curr_y[1:])
-        self.vel -= left_deltas
-        self.vel -= right_deltas
-
-        if interactors:
-            for obj in interactors:
-                if self.x < obj.x + obj.width / 2 < self.x + self.width:
-                    water_line = self.get_height_at(obj.x + obj.width / 2)
-                    obj_bottom = obj.y + obj.height
-
-                    if obj_bottom > water_line:
-                        if abs(obj_bottom - water_line) < 10:
-                            self.splash(obj.x + obj.width / 2, 5)
-
-                        depth = obj_bottom - water_line
-                        buoyancy_force = depth * 0.5
-
-                        if hasattr(obj, 'frect'):
-                            pass
-
-        self._draw_fluid()
-
-    def _draw_fluid(self):
-        self.surface.fill((0, 0, 0, 0))
-        x_coords = np.arange(0, self.count) * self.column_width
-
-        top_points = np.stack((x_coords, self.curr_y), axis=-1)
-        bottom_right = [[self.width, self.height]]
-        bottom_left = [[0, self.height]]
-        full_poly = np.concatenate([top_points, bottom_right, bottom_left])
-
-        pygame.draw.polygon(self.surface, self.color, full_poly.tolist())
-
-        if len(top_points) > 1:
-            pygame.draw.lines(self.surface, (255, 255, 255), False, top_points.tolist(), 2)
-
-
-class AnimatedSolidSprite(SolidSprite):
-    def __init__(self, x, y, w, h, gw=None, gh=None):
-        super().__init__(x, y, w, h, (0, 0, 0, 0))
-        self.animations = {}
-        self.current_state = 'idle'
-        self.frame_index = 0.0
-        self.animation_speed = 12.0
-        self.frect = pygame.FRect(x, y, w, h)
-        self.gw = gw if gw is not None else w
-        self.gh = gh if gh is not None else h
-
-    def add_animation(self, name, frames):
-        scaled_frames = []
-        for f in frames:
-            scaled_f = pygame.transform.scale(f, (self.gw, self.gh))
-            scaled_frames.append(scaled_f.convert_alpha())
-        self.animations[name] = scaled_frames
-
-        if name == self.current_state:
-            self.surface = self.animations[name][0]
-
-    def update_animation(self, dt):
-        if self.current_state not in self.animations: return
-
-        frames = self.animations[self.current_state]
-        self.frame_index += self.animation_speed * dt
-
-        idx = int(self.frame_index) % len(frames)
-        self.surface = frames[idx]
-
-
-class Layer:
-    def __init__(self, name: str, parallax: float = 1.0, **kwargs):
-        self.name = name
-        self.parallax = parallax
-        self.sprites: List[Sprite] = []
-        self.effects: List[Tuple[Any, tuple]] = []
-        self.visible = True
-
-        self._cached_surf = None
-
-    def add_effect(self, effect_fn, *args):
-        self.effects.append((effect_fn, args))
-
-    def _get_layer_surf(self, size: Tuple[int, int]) -> pygame.Surface:
-        if self._cached_surf is None or self._cached_surf.get_size() != size:
-            self._cached_surf = pygame.Surface(size, pygame.SRCALPHA)
-        return self._cached_surf
-
-    def render(self, screen: pygame.Surface, camera: Camera, emitters=None):
-        if not self.visible: return
-
-        if self.parallax == 0.0 and not self.effects and not emitters:
-            for s in self.sprites:
-                screen.blit(s.surface, (int(s.x), int(s.y)))
-            return
-
-        screen_size = screen.get_size()
-        layer_surf = self._get_layer_surf(screen_size)
-
-        layer_surf.fill((0, 0, 0, 0))
-
-        cx, cy = camera.x * self.parallax, camera.y * self.parallax
-        screen_w, screen_h = screen_size
-
-        for s in self.sprites:
-            sx, sy = s.x - cx, s.y - cy
-
-            if -s.width < sx < screen_w and -s.height < sy < screen_h:
-                if hasattr(s, 'update'):
-                    s.update()
-                layer_surf.blit(s.surface, (int(sx), int(sy)))
-
-        if emitters is not None:
-            for emitter in emitters:
-                emitter.draw(layer_surf, camera)
-
-        for effect_fn, args in self.effects:
-            effect_fn(layer_surf, *args)
-
-        screen.blit(layer_surf, (0, 0))
-
-
-class ChunkedLayer:
-    def __init__(self, name: str, parallax: float = 1.0, chunk_size: int = 500):
-        self.name = name
-        self.parallax = parallax
-        self.visible = True
-        self.chunk_size = chunk_size
-
-        self.chunks = {}
-        self.sprites = []
-
-        self.effects: List[Tuple[Any, tuple]] = []
-        self._cached_surf = None
-
-    def add_effect(self, effect_fn, *args):
-        self.effects.append((effect_fn, args))
-
-    def add_static(self, sprite):
-        cx = int(sprite.x // self.chunk_size)
-        cy = int(sprite.y // self.chunk_size)
-
-        if (cx, cy) not in self.chunks:
-            self.chunks[(cx, cy)] = []
-        self.chunks[(cx, cy)].append(sprite)
-
-    def add_dynamic(self, sprite):
-        self.sprites.append(sprite)
-
-    def _get_layer_surf(self, size: Tuple[int, int]) -> pygame.Surface:
-        if self._cached_surf is None or self._cached_surf.get_size() != size:
-            self._cached_surf = pygame.Surface(size, pygame.SRCALPHA)
-        return self._cached_surf
-
-    def render(self, screen: pygame.Surface, camera: Camera, emitters=None):
-        if not self.visible: return
-
-        screen_size = screen.get_size()
-        screen_w, screen_h = screen_size
-
-        cx, cy = camera.x * self.parallax, camera.y * self.parallax
-
-        layer_surf = self._get_layer_surf(screen_size)
-        layer_surf.fill((0, 0, 0, 0))
-
-        start_chunk_x = int(cx // self.chunk_size)
-        end_chunk_x = int((cx + screen_w) // self.chunk_size) + 1
-
-        start_chunk_y = int(cy // self.chunk_size)
-        end_chunk_y = int((cy + screen_h) // self.chunk_size) + 1
-
-        for x in range(start_chunk_x - 1, end_chunk_x + 1):
-            for y in range(start_chunk_y - 1, end_chunk_y + 1):
-                chunk_key = (x, y)
-                if chunk_key in self.chunks:
-                    for s in self.chunks[chunk_key]:
-                        sx = s.x - cx
-                        sy = s.y - cy
-                        if -s.width < sx < screen_w and -s.height < sy < screen_h:
-                            layer_surf.blit(s.surface, (int(sx), int(sy)))
-
-        for s in self.sprites:
-            sx = s.x - cx
-            sy = s.y - cy
-            if -s.width < sx < screen_w and -s.height < sy < screen_h:
-                if hasattr(s, 'update'):
-                    s.update()
-                layer_surf.blit(s.surface, (int(sx), int(sy)))
-
-        if emitters is not None:
-            for emitter in emitters:
-                emitter.draw(layer_surf, camera)
-
-        for effect_fn, args in self.effects:
-            effect_fn(layer_surf, *args)
-
-        screen.blit(layer_surf, (0, 0))
-
-
 class Game:
     def __init__(self, w=200, h=300, title="Ortensia Engine", flag=pygame.RESIZABLE | pygame.SCALED | pygame.DOUBLEBUF, icon=None):
         pygame.init()
@@ -880,10 +486,13 @@ class Game:
         self.scale = 1
         self.layer_type = ChunkedLayer
 
-    def add_layer(self, name, parallax=1.0, chunk_size=30) -> Layer:
+    def add_create_layer(self, name, parallax=1.0, chunk_size=30) -> Layer:
         l = self.layer_type(name, parallax, chunk_size=chunk_size)
         self.layers.append(l)
         return l
+
+    def add_layer(self, l):
+        self.layers.append(l)
 
     def run(self, update_callback):
         while self.running:
@@ -923,14 +532,14 @@ class Game:
 
 if __name__ == "__main__":
     def s(x):
-        return int(x * 1)
+        return int(x * 0.5)
 
 
     game = Game(s(1000), s(600), flag=pygame.SCALED | pygame.RESIZABLE)
-    bg2 = game.add_layer("Background2", 0.2)
-    bg = game.add_layer("Background", 0.5)
-    particles = game.add_layer("particles", 1.0)
-    fg = game.add_layer("Foreground", 1.0)
+    bg2 = game.add_create_layer("Background2", 0.2)
+    bg = game.add_create_layer("Background", 0.5)
+    particles = game.add_create_layer("particles", 1.0)
+    fg = game.add_create_layer("Foreground", 1.0)
 
     # fg.add_effect(PostProcessing.underwater_distortion, 5)
     particles.add_effect(PostProcessing.lumen, 20, 3)
