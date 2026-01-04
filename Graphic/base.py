@@ -398,6 +398,57 @@ class PostProcessing:
             offset_y = -step_y * i
             surface.blit(ghost, (offset_x, offset_y))
 
+    @staticmethod
+    def fast_motion_blur(surface: pygame.Surface, camera: Camera, strength_scale=1.0, quality=EFFECTS_QUALITY):
+        """
+        Optimized Motion Blur using Downsampling.
+        """
+        if quality <= 0: return
+
+        vx = camera.velocity_x * strength_scale
+        vy = camera.velocity_y * strength_scale
+        magnitude = math.sqrt(vx ** 2 + vy ** 2)
+
+        if magnitude < 1.0: return
+
+        downscale_factor = 4 if quality == 1 else (2 if quality == 2 else 1)
+
+        w, h = surface.get_size()
+        small_w = max(1, w // downscale_factor)
+        small_h = max(1, h // downscale_factor)
+
+        work_surf = pygame.transform.smoothscale(surface, (small_w, small_h))
+
+        samples = [2, 3, 5, 1][min(quality, 3)]
+
+        vx /= downscale_factor
+        vy /= downscale_factor
+
+        max_blur = 40 / downscale_factor
+        curr_mag = math.sqrt(vx ** 2 + vy ** 2)
+        if curr_mag > max_blur:
+            scale = max_blur / curr_mag
+            vx *= scale
+            vy *= scale
+
+        ghost = work_surf.copy()
+
+        alpha = max(50, int(180 / samples))
+        ghost.set_alpha(alpha)
+
+        step_x = vx / samples
+        step_y = vy / samples
+
+        for i in range(1, samples + 1):
+            offset_x = -step_x * i
+            offset_y = -step_y * i
+            work_surf.blit(ghost, (offset_x, offset_y))
+
+        final_blur = pygame.transform.smoothscale(work_surf, (w, h))
+
+        final_blur.set_alpha(150)
+        surface.blit(final_blur, (0, 0))
+
 
 class ParticleEmitter:
     def __init__(self, color=(0, 255, 255), count=1000, size=1, g=10, sparsity=0.75, deltax=0, deltay=0):
@@ -567,7 +618,7 @@ class Game:
 
 if __name__ == "__main__":
     def s(x):
-        return int(x * 0.5)
+        return int(x * 1)
 
 
     game = Game(s(1000), s(600), flag=pygame.SCALED | pygame.RESIZABLE)
@@ -615,6 +666,25 @@ if __name__ == "__main__":
             wall = Sprite(i * s(400), s(450), s(60), s(150), (30, 70, 40))
             fg.sprites.append(wall)
 
+    terrain_layer = game.add_create_layer("Terrain", 1.0)
+    map_system = TileMap(game, terrain_layer, tile_size=s(40), texture='../examples/Ortensia1.png')
+
+
+    def draw_builder_cursor(screen, tile_map, camera):
+        mx, my = pygame.mouse.get_pos()
+        gx, gy = tile_map.get_grid_pos(mx, my)
+
+        cam_x = camera.x * tile_map.layer.parallax
+        cam_y = camera.y * tile_map.layer.parallax
+
+        rect_x = (gx * tile_map.tile_size) - cam_x
+        rect_y = (gy * tile_map.tile_size) - cam_y
+
+        cursor_surf = pygame.Surface((tile_map.tile_size, tile_map.tile_size), pygame.SRCALPHA)
+        cursor_surf.fill((255, 255, 255, 100))
+        pygame.draw.rect(cursor_surf, (255, 255, 255), (0, 0, tile_map.tile_size, tile_map.tile_size), 2)  # Border
+
+        screen.blit(cursor_surf, (rect_x, rect_y))
 
     def my_update(game_inst, dt):
         keys = pygame.key.get_pressed()
@@ -634,5 +704,15 @@ if __name__ == "__main__":
 
         emitter1.emit(player.x + s(20), player.y + s(20))
 
+        mouse_buttons = pygame.mouse.get_pressed()
+        mx, my = pygame.mouse.get_pos()
+
+        if mouse_buttons[0]:
+            map_system.place_tile(mx, my, color=(100, 200, 100))
+
+        if mouse_buttons[2]:
+            map_system.remove_tile(mx, my)
+
+        # draw_builder_cursor(game_inst.screen, map_system, game_inst.main_camera)
 
     game.run(my_update)

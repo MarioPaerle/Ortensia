@@ -13,12 +13,19 @@ def load_spritesheet(filename, frame_w, frame_h, row='all', scale=(1, 1)):
         sheet = pygame.image.load(filename).convert_alpha()
         frames = []
         for x in range(0, sheet.get_width(), frame_w):
-            frame = sheet.subsurface(pygame.Rect(x, row*frame_h, frame_w, frame_h))
+            frame = sheet.subsurface(pygame.Rect(x, row * frame_h, frame_w, frame_h))
             frames.append(frame)
 
     return [pygame.transform.scale_by(f, factor=scale) for f in frames]
 
 
 def scale_color(color, factor):
-    return [min(255, max(0, int(color[i]*factor))) for i in range(len(color))]
+    return [min(255, max(0, int(color[i] * factor))) for i in range(len(color))]
 
+
+def show_surface(surface):
+    from PIL import Image
+    str_data = pygame.image.tobytes(surface, 'RGBA')
+    size = surface.get_size()
+    image = Image.frombytes('RGBA', size, str_data)
+    image.show()

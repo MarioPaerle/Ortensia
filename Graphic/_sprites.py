@@ -4,10 +4,22 @@ import numpy as np
 
 
 class Sprite:
-    def __init__(self, x, y, w, h, color=(255, 255, 255)):
+    def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False):
         self.x, self.y, self.width, self.height = x, y, w, h
-        self.surface = pygame.Surface((w, h))
-        self.surface.fill(color)
+
+        flags = pygame.SRCALPHA if alpha else 0
+        self.surface = pygame.Surface((w, h), flags)
+
+        if texture is not None and alpha:
+            self.texture = pygame.image.load(texture).convert_alpha()
+            self.texture = pygame.transform.scale(self.texture, (w, h))
+            self.surface.blit(self.texture, (0, 0))
+
+        elif texture is not None and not alpha:
+            self.texture = pygame.image.load(texture).convert()
+            self.surface.blit(self.texture, (0, 0))
+        else:
+            self.surface.fill(color)
 
     def move(self, dx, dy):
         self.x += dx
@@ -99,26 +111,23 @@ class SpatialGrid:
 
 
 class SolidSprite(Sprite):
-    def __init__(self, x, y, w, h, color=(255, 255, 255)):
-        super().__init__(x, y, w, h, color)
+    def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False):
+        super().__init__(x, y, w, h, color, texture=texture, alpha=alpha)
         self.frect = pygame.FRect(x, y, w, h)
-
+        
     def move(self, dx, dy, grid):
-        # Horizontal Move & Resolve
         self.frect.x += dx
         for other in grid.get_nearby(self.frect):
             if other is not self and self.frect.colliderect(other.frect):
                 if dx > 0: self.frect.right = other.frect.left
                 if dx < 0: self.frect.left = other.frect.right
 
-        # Vertical Move & Resolve
         self.frect.y += dy
         for other in grid.get_nearby(self.frect):
             if other is not self and self.frect.colliderect(other.frect):
                 if dy > 0: self.frect.bottom = other.frect.top
                 if dy < 0: self.frect.top = other.frect.bottom
 
-        # Sync back to base Sprite properties for rendering
         self.x, self.y = self.frect.x, self.frect.y
 
 
@@ -230,4 +239,3 @@ class AnimatedSolidSprite(SolidSprite):
 
         idx = int(self.frame_index) % len(frames)
         self.surface = frames[idx]
-

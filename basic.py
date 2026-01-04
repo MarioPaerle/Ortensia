@@ -3,7 +3,7 @@ from Graphic.base import *
 from Graphic.functions import *
 
 
-class BuildableLayer:
+class Map:
     def __init__(self):
         pass
 
@@ -105,7 +105,7 @@ particles = game.add_create_layer("particles", 1.0)
 fg = LitLayer("Foreground", 1.0, ambient_color=(100, 100, 100)) # Dark ambient
 game.add_layer(fg)
 
-wall_lamp3 = LightSource(s(130), s(400), radius=s(200), color=(255, 60, 60), falloff=0.99, steps=100)
+wall_lamp3 = LightSource(s(130), s(400), radius=s(200), color=(255, 60, 60), falloff=0.1, steps=10)
 wall_lamp = LightSource(s(600), s(450), radius=s(200), color=(60, 255, 60), falloff=0.99, steps=100)
 wall_lamp2 = LightSource(s(900), s(450), radius=s(200), color=(60, 60, 255), falloff=0.99, steps=100)
 fg.add_light(wall_lamp)
@@ -152,6 +152,7 @@ for i in range(15):
     else:
         wall = Sprite(i * s(400), s(450), s(60), s(150), (30, 70, 40))
         fg.sprites.append(wall)
+
 
 game.player = player
 game.cameras.append(Camera)
