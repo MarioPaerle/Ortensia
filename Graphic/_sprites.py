@@ -1,6 +1,7 @@
 import pygame
 from typing import List, Any, Optional
 import numpy as np
+import copy
 
 
 class Sprite:
@@ -86,7 +87,6 @@ class SpatialGrid:
         self.cells.clear()
 
     def insert(self, sprite):
-        # Calculate cell range the sprite occupies
         x_start = int(sprite.frect.left // self.cell_size)
         x_end = int(sprite.frect.right // self.cell_size)
         y_start = int(sprite.frect.top // self.cell_size)
@@ -114,7 +114,7 @@ class SolidSprite(Sprite):
     def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False):
         super().__init__(x, y, w, h, color, texture=texture, alpha=alpha)
         self.frect = pygame.FRect(x, y, w, h)
-        
+
     def move(self, dx, dy, grid):
         self.frect.x += dx
         for other in grid.get_nearby(self.frect):
@@ -129,6 +129,47 @@ class SolidSprite(Sprite):
                 if dy < 0: self.frect.top = other.frect.bottom
 
         self.x, self.y = self.frect.x, self.frect.y
+
+
+class Block(SolidSprite):
+    """
+    A template block that clones itself.
+    Inherits 'move' from SolidSprite, so it has physics too!
+    """
+
+    def __init__(self, w, h, id, texture=None, alpha=False):
+        super().__init__(0, 0, w, h, (100, 100, 100), texture=texture, alpha=alpha)
+
+        self.id = id
+        self.name = 'Generic Block'
+
+        self.phisic_block = False
+        self.speed_multiplier = 1
+        self.bounce_multiplier = 1
+        self.stickyness = 0
+        self.hardness = 0
+        self.light_emission_intensity = 0
+        self.light_emission_color = (255, 255, 255)
+
+    def clone(self):
+        new_obj = copy.copy(self)
+        new_obj.frect = self.frect.copy()
+
+        return new_obj
+
+    def place(self, x, y):
+        """
+        Clones the template and teleports it to (x, y).
+        """
+        new_block = self.clone()
+
+        new_block.frect.topleft = (x, y)
+        new_block.rect.topleft = (x, y)
+
+        return new_block
+
+    def __repr__(self):
+        return f'<Block {self.id} at {self.rect.topleft}>'
 
 
 class FluidSprite(Sprite):

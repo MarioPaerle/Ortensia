@@ -367,16 +367,15 @@ class PostProcessing:
     def motion_blur(surface: pygame.Surface, camera: Camera, strength_scale=1.0, quality=EFFECTS_QUALITY):
         if quality <= 0: return
 
-        # 1. Get Velocity
         vx = camera.velocity_x * strength_scale
         vy = camera.velocity_y * strength_scale
 
-        magnitude = math.sqrt(vx ** 2 + vy ** 2)
+        magnitude = abs(vx ** 2 + vy ** 2)
 
         if magnitude < 0.5:
             return
 
-        samples = [1, 2, 4, 8, 12, 16][min(quality, 5)]
+        samples = [1, 1, 2, 3, 5, 10][min(quality, 5)]
 
         max_blur = 60
         if magnitude > max_blur:

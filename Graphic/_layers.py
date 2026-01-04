@@ -349,7 +349,6 @@ class TileMap:
 
     def place_tile(self, screen_x, screen_y, color=(200, 200, 200)):
         gx, gy = self.get_grid_pos(screen_x, screen_y)
-
         if (gx, gy) in self.data:
             return
 
@@ -357,6 +356,52 @@ class TileMap:
         world_y = gy * self.tile_size
 
         tile_sprite = SolidSprite(world_x, world_y, self.tile_size, self.tile_size, color, texture=self.texture, alpha=True)
+
+        self.layer.add_static(tile_sprite)
+        self.game.solids.append(tile_sprite)
+        self.data[(gx, gy)] = tile_sprite
+
+    def remove_tile(self, screen_x, screen_y):
+        gx, gy = self.get_grid_pos(screen_x, screen_y)
+
+        if (gx, gy) in self.data:
+            sprite = self.data[(gx, gy)]
+
+            self.layer.remove_static(sprite)
+            if sprite in self.game.solids:
+                self.game.solids.remove(sprite)
+
+            del self.data[(gx, gy)]
+
+
+class BlockMap:
+    def __init__(self, game, layer: ChunkedLayer, tile_size=40, texture=None):
+        self.game = game
+        self.layer = layer
+        self.tile_size = tile_size
+        self.texture = texture
+        self.data = {}
+
+    def get_grid_pos(self, screen_x, screen_y):
+        cam_x = self.game.main_camera.x * self.layer.parallax
+        cam_y = self.game.main_camera.y * self.layer.parallax
+
+        world_x = screen_x + cam_x
+        world_y = screen_y + cam_y
+
+        gx = int(world_x // self.tile_size)
+        gy = int(world_y // self.tile_size)
+        return gx, gy
+
+    def place_tile(self, screen_x, screen_y, block):
+        gx, gy = self.get_grid_pos(screen_x, screen_y)
+        if (gx, gy) in self.data:
+            return
+
+        world_x = gx * self.tile_size
+        world_y = gy * self.tile_size
+
+        tile_sprite = Block(world_x, world_y, self.tile_size, self.tile_size, 0, texture=self.texture, alpha=True)
 
         self.layer.add_static(tile_sprite)
         self.game.solids.append(tile_sprite)

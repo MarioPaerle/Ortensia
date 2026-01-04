@@ -14,7 +14,7 @@ class Engine(Game):
             name='Ortensia',
             base_size=(1000, 600),
             flag=pygame.SCALED | pygame.RESIZABLE,
-            scaler=lambda x: int(x*1),
+            scaler=lambda x: int(x * 1),
 
     ):
         self.name = name
@@ -33,6 +33,11 @@ class Engine(Game):
     def dt(self):
         return self.clock.tick(self.max_fps) / self.game_div
 
+    def refresh_grid(self):
+        self.grid.clear()
+        for obj in self.solids:
+            self.grid.insert(obj)
+
     def update(self):
         while self.running:
             dt = self.dt()
@@ -40,10 +45,6 @@ class Engine(Game):
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
-
-            self.grid.clear()
-            for obj in self.solids:
-                self.grid.insert(obj)
 
             self.mechaniches(dt)
             camera.update()
@@ -89,10 +90,22 @@ class Player(AnimatedSprite):
         if keys[pygame.K_DOWN]:  dy += speed
         if keys[pygame.K_SPACE]:
             self.game.main_camera.shake_intensity = 1
+            fg.add_light(wall_lamp4)
 
         self.move(dx, dy, self.game.grid)
         self.update_animation(dt)
         water.update(interactors=[self])
+
+        mouse_buttons = pygame.mouse.get_pressed()
+        mx, my = pygame.mouse.get_pos()
+        if mouse_buttons[0]:
+            map_system.place_tile(mx, my, color=(100, 200, 100))
+            game.refresh_grid()
+
+        if mouse_buttons[2]:
+            map_system.remove_tile(mx, my)
+            game.refresh_grid()
+
 
 
 game = Engine(name='Ortensia', base_size=(1000, 600), flag=pygame.SCALED | pygame.RESIZABLE)
@@ -100,12 +113,15 @@ s = game.scaler
 bg2 = game.add_create_layer("Background2", 0.2)
 bg = game.add_create_layer("Background", 0.5)
 particles = game.add_create_layer("particles", 1.0)
+terrain_layer = game.add_create_layer("Terrain", 1.0)
+map_system = TileMap(game, terrain_layer, tile_size=s(40), texture='examples/Ortensia1.png')
 # fg = game.add_layer("Foreground", 1.0)
 
-fg = LitLayer("Foreground", 1.0, ambient_color=(100, 100, 100)) # Dark ambient
+fg = LitLayer("Foreground", 1.0, ambient_color=(100, 100, 100))  # Dark ambient
 game.add_layer(fg)
 
 wall_lamp3 = LightSource(s(130), s(400), radius=s(200), color=(255, 60, 60), falloff=0.1, steps=10)
+wall_lamp4 = LightSource(s(250), s(200), radius=s(200), color=(255, 0, 60), falloff=0.99, steps=100)
 wall_lamp = LightSource(s(600), s(450), radius=s(200), color=(60, 255, 60), falloff=0.99, steps=100)
 wall_lamp2 = LightSource(s(900), s(450), radius=s(200), color=(60, 60, 255), falloff=0.99, steps=100)
 fg.add_light(wall_lamp)
@@ -153,7 +169,7 @@ for i in range(15):
         wall = Sprite(i * s(400), s(450), s(60), s(150), (30, 70, 40))
         fg.sprites.append(wall)
 
-
 game.player = player
 game.cameras.append(Camera)
+game.refresh_grid()
 game.update()
