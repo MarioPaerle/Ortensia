@@ -48,6 +48,7 @@ class Layer:
         self.parallax = parallax
         self.sprites: List[Sprite] = []
         self.effects: List[Tuple[Any, tuple]] = []
+        self.emitters = []
         self.visible = True
 
         self._cached_surf = None
@@ -86,7 +87,8 @@ class Layer:
 
         if emitters is not None:
             for emitter in emitters:
-                emitter.draw(layer_surf, camera)
+                emitter.draw(layer_surf, camera, self.parallax)
+                emitter.update()
 
         for effect_fn, args in self.effects:
             effect_fn(layer_surf, *args)
@@ -105,6 +107,7 @@ class ChunkedLayer:
         self.sprites = []
 
         self.effects: List[Tuple[Any, tuple]] = []
+        self.emitters: List[Tuple[Any, tuple]] = []
         self._cached_surf = None
 
     def add_effect(self, effect_fn, *args):
@@ -137,6 +140,7 @@ class ChunkedLayer:
         return self._cached_surf
 
     def render(self, screen: pygame.Surface, camera: Camera, emitters=None):
+        emitters = self.emitters
         if not self.visible: return
 
         screen_size = screen.get_size()
@@ -173,7 +177,7 @@ class ChunkedLayer:
 
         if emitters is not None:
             for emitter in emitters:
-                emitter.draw(layer_surf, camera)
+                emitter.draw(layer_surf, camera, self.parallax)
 
         for effect_fn, args in self.effects:
             effect_fn(layer_surf, *args)
@@ -401,7 +405,7 @@ class BlockMap:
         world_x = gx * self.tile_size
         world_y = gy * self.tile_size
 
-        tile_sprite = Block(world_x, world_y, self.tile_size, self.tile_size, 0, texture=self.texture, alpha=True)
+        tile_sprite = block.place(world_x, world_y)
 
         self.layer.add_static(tile_sprite)
         self.game.solids.append(tile_sprite)

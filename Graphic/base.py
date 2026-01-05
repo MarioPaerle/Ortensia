@@ -5,7 +5,7 @@ import datetime
 
 
 PARTICLE_EMISSION_QUALITY = 1
-EFFECTS_QUALITY = 3
+EFFECTS_QUALITY = 2
 
 
 class PostProcessing:
@@ -489,20 +489,22 @@ class ParticleEmitter:
         self.data[self.active, 3] += self.g * dt
         self.data[self.active, 0:2] += self.data[self.active, 2:4] * dt
 
-        # 3. Decay life
         self.data[self.active, 4] -= dt
         self.active &= (self.data[:, 4] > 0)
 
-
-    def draw(self, surface, camera):
+    def draw(self, surface, camera, parallax=1):
         indices = np.where(self.active)[0]
+        screen_w, screen_h = surface.get_size()
         for i in indices:
-            px = int(self.data[i, 0] - camera.x)
-            py = int(self.data[i, 1] - camera.y)
+            px = int(self.data[i, 0] - camera.x)*parallax
+            py = int(self.data[i, 1] - camera.y)*parallax
             size = max(1, int(self.data[i, 4] * 5))
-            color = self.color if self.color != 'random' else (
-                random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-            pygame.draw.circle(surface, color, (px, py), max(1, int(size * self.size)))
+
+            radius = max(1, int(size * self.size))
+            if -radius <= px <= screen_w + radius and -radius <= py <= screen_h + radius:
+                color = self.color if self.color != 'random' else (
+                    random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+                pygame.draw.circle(surface, color, (px*parallax, py*parallax), radius)
 
 
 class FireflyEmitter(ParticleEmitter):
@@ -525,25 +527,26 @@ class FireflyEmitter(ParticleEmitter):
         self.data[self.active, 0:2] += self.data[self.active, 2:4] * dt
         self.firefly_data[self.active, 0] += dt  # Timer
 
-    def draw(self, surface, camera):
+    def draw(self, surface, camera, parallax=1):
         indices = np.where(self.active)[0]
-        for i in indices:
-            px = int(self.data[i, 0] - camera.x)
-            py = int(self.data[i, 1] - camera.y)
+        screen_w, screen_h = surface.get_size()
 
-            # Pulse the alpha/size using a sine wave
+        for i in indices:
+            px = int(self.data[i, 0] - camera.x)*parallax
+            py = int(self.data[i, 1] - camera.y)*parallax
+
             timer = self.firefly_data[i, 0]
             pulse = (math.sin(timer * 2.0 + self.firefly_data[i, 3]) + 1) / 2
 
-            # Draw the core
             current_size = max(1, int(self.size * (1 + pulse / 4)))
 
-            # For fireflies, we draw two circles: a bright core and a soft glow
-            # Note: Pygame-ce draw.circle is fast, but for 100+ fireflies this is fine
             color = self.color
-            pygame.draw.circle(surface, color, (px, py), current_size)
+            radius = current_size*parallax
+            if -radius <= px <= screen_w + radius and -radius <= py <= screen_h + radius:
+                color = self.color if self.color != 'random' else (
+                    random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+                pygame.draw.circle(surface, color, (px * parallax, py * parallax), radius)
 
-            # Add a subtle bloom/glow if we are on a transparent layer
             if pulse > 0.7:
                 glow_color = (min(255, color[0] + 50), min(255, color[1] + 50), color[2], 100)
                 pygame.draw.circle(surface, glow_color, (px, py), current_size * 2)

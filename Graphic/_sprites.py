@@ -57,25 +57,29 @@ class AnimatedSprite(Sprite):
             self.frame_index = 0.0
 
     def move(self, dx, dy, grid):
-        """Integrated with your SolidSprite logic."""
         self.frect.x += dx
+        collide = 'none'
         for other in grid.get_nearby(self.frect):
             if other is not self and self.frect.colliderect(other.frect):
-                if dx > 0: self.frect.right = other.frect.left
-                if dx < 0: self.frect.left = other.frect.right
-
+                if dx > 0:
+                    self.frect.right = other.frect.left
+                    collide = 'r'
+                if dx < 0:
+                    self.frect.left = other.frect.right
+                    collide = 'l'
         self.frect.y += dy
         for other in grid.get_nearby(self.frect):
             if other is not self and self.frect.colliderect(other.frect):
-                if dy > 0: self.frect.bottom = other.frect.top
-                if dy < 0: self.frect.top = other.frect.bottom
+                if dy > 0:
+                    self.frect.bottom = other.frect.top
+                    collide = 'b'
+                if dy < 0:
+                    self.frect.top = other.frect.bottom
+                    collide = 'u'
 
         self.x, self.y = self.frect.x, self.frect.y
 
-        if dx != 0 or dy != 0:
-            self.set_state("walk")
-        else:
-            self.set_state("idle")
+        return collide
 
 
 class SpatialGrid:
