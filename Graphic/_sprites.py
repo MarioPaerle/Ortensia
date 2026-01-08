@@ -18,6 +18,8 @@ class Sprite:
 
         elif texture is not None and not alpha:
             self.texture = pygame.image.load(texture).convert()
+            self.texture = pygame.transform.scale(self.texture, (w, h))
+
             self.surface.blit(self.texture, (0, 0))
         else:
             self.surface.fill(color)
@@ -28,13 +30,14 @@ class Sprite:
 
 
 class AnimatedSprite(Sprite):
-    def __init__(self, x, y, w, h):
+    def __init__(self, x, y, w, h, cw=None, ch=None):
         super().__init__(x, y, w, h)
         self.animations = {}  # Store lists of frames: {"idle": [surf1, surf2], "walk": [...]}
         self.current_state = "idle"
         self.frame_index = 0.0
-        self.animation_speed = 10.0  # Frames per second
-        self.frect = pygame.FRect(x, y, w, h)  # For compatibility with your new collision system
+        self.animation_speed = 10.0
+
+        self.frect = pygame.FRect(x, y, w if cw is None else cw, h if ch is None else ch)
 
     def add_animation(self, name: str, frames: List[pygame.Surface]):
         """Register a list of surfaces for a specific state."""
@@ -115,9 +118,9 @@ class SpatialGrid:
 
 
 class SolidSprite(Sprite):
-    def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False):
+    def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False, cw=None, ch=None):
         super().__init__(x, y, w, h, color, texture=texture, alpha=alpha)
-        self.frect = pygame.FRect(x, y, w, h)
+        self.frect = pygame.FRect(x, y, w if cw is None else cw, h if ch is None else ch)
 
     def move(self, dx, dy, grid):
         self.frect.x += dx
@@ -142,11 +145,12 @@ class Block(SolidSprite):
     """
 
     def __init__(self, w, h, id, texture=None, alpha=False):
-        super().__init__(0, 0, w, h, (100, 100, 100), texture=texture, alpha=alpha)
+        super().__init__(-100, -100, w, h, (100, 100, 100), texture=texture, alpha=alpha)
 
         self.id = id
         self.name = 'Generic Block'
 
+        self.emitter = None
         self.phisic_block = False
         self.speed_multiplier = 1
         self.bounce_multiplier = 1
@@ -168,7 +172,9 @@ class Block(SolidSprite):
         new_block = self.clone()
 
         new_block.frect.topleft = (x, y)
-        new_block.rect.topleft = (x, y)
+        new_block.x = x
+        new_block.y = y
+        # new_block.rect.topleft = (x, y)
 
         return new_block
 
@@ -233,7 +239,6 @@ class FluidSprite(Sprite):
                             self.splash(obj.x + obj.width / 2, 5)
 
                         depth = obj_bottom - water_line
-                        buoyancy_force = depth * 0.5
 
                         if hasattr(obj, 'frect'):
                             pass

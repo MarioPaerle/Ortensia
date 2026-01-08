@@ -5,7 +5,7 @@ import datetime
 
 
 PARTICLE_EMISSION_QUALITY = 1
-EFFECTS_QUALITY = 2
+EFFECTS_QUALITY = 4
 
 
 class PostProcessing:
@@ -448,6 +448,52 @@ class PostProcessing:
         final_blur.set_alpha(150)
         surface.blit(final_blur, (0, 0))
 
+    _fog_noise = None
+
+    @staticmethod
+    def _generate_fog_noise(size):
+        """Generates a simple cloud/noise texture using numpy."""
+        width, height = size
+        x = np.linspace(0, 1 * np.pi, width)
+        y = np.linspace(0, 3 * np.pi, height)
+        X, Y = np.meshgrid(x, y)
+
+        noise = (np.sin(X) + np.sin(Y) + np.sin(X * 2 + Y) * 0.5)
+        noise = noise + np.random.randn(*noise.shape) / 30
+
+        noise = ((noise - noise.min()) / (noise.max() - noise.min()) * 255).astype(np.uint8) // 2
+
+        fog_surf = pygame.Surface(size, pygame.SRCALPHA)
+        fog_surf.fill((200, 200, 220))
+
+        pygame.surfarray.pixels_alpha(fog_surf)[...] = noise.transpose(-1, -2)
+        return fog_surf
+
+    @staticmethod
+    def fog(surface: pygame.Surface, density=0.4, speed=0.5, quality=EFFECTS_QUALITY):
+        if quality <= 0: return
+
+        w, h = surface.get_size()
+
+        if PostProcessing._fog_noise is None or PostProcessing._fog_noise.get_size() != (w, h):
+            PostProcessing._fog_noise = PostProcessing._generate_fog_noise((w, h))
+
+        time_val = pygame.time.get_ticks() / 400.0 * speed
+
+        offset_x1 = int(time_val * 50) % w
+        offset_x2 = int(time_val * -20) % w
+
+        fog_layer = PostProcessing._fog_noise
+        fog_layer.set_alpha(int(255 * density))
+
+
+        surface.blit(fog_layer, (offset_x1 - w, 0))
+        surface.blit(fog_layer, (offset_x1, 0))
+
+        # fog_layer_2 = pygame.transform.flip(fog_layer, True, False)
+        # surface.blit(fog_layer_2, (offset_x2 - w, 0))
+        # surface.blit(fog_layer_2, (offset_x2, 0))
+
 
 class ParticleEmitter:
     def __init__(self, color=(0, 255, 255), count=1000, size=1, g=10, sparsity=0.75, deltax=0, deltay=0):
@@ -574,8 +620,10 @@ class Game:
         self.scale = 1
         self.layer_type = ChunkedLayer
 
-    def add_create_layer(self, name, parallax=1.0, chunk_size=30) -> Layer:
-        l = self.layer_type(name, parallax, chunk_size=chunk_size)
+    def add_create_layer(self, name, parallax=1.0, chunk_size=30, layertype=ChunkedLayer) -> Layer:
+        if layertype is None:
+            layertype = self.layer_type
+        l = layertype(name, parallax, chunk_size=chunk_size)
         self.layers.append(l)
         return l
 
@@ -630,8 +678,8 @@ if __name__ == "__main__":
     fg = game.add_create_layer("Foreground", 1.0)
 
     # fg.add_effect(PostProcessing.underwater_distortion, 5)
-    particles.add_effect(PostProcessing.lumen, 20, 3)
-    # fg.add_effect(PostProcessing.black_and_white)
+    # particles.add_effect(PostProcessing.lumen, 20, 3)
+    fg.add_effect(PostProcessing.fog, 0.1, 10)
     from functions import *
 
     # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
