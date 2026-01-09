@@ -494,6 +494,62 @@ class PostProcessing:
         # surface.blit(fog_layer_2, (offset_x2 - w, 0))
         # surface.blit(fog_layer_2, (offset_x2, 0))
 
+    _grain_surface = None
+    _grain_params = None
+
+    @staticmethod
+    def grain(surface: pygame.Surface, intensity=20, dynamic=True, quality=EFFECTS_QUALITY):
+        """
+        Adds a film grain / noise overlay.
+        intensity: 0-255 (15-30 is usually the 'sweet spot' for 2000s film).
+        dynamic: If True, the grain jitters every frame.
+        """
+        if quality <= 0 or intensity <= 0: return
+
+        size = surface.get_size()
+        current_params = (size, intensity)
+
+        # 1. Cache the grain surface so we don't regenerate noise every frame
+        if PostProcessing._grain_surface is None or PostProcessing._grain_params != current_params:
+            # We create the grain at a lower resolution for performance if quality is low
+            scale = [0, 4, 2, 1, 1, 1][quality]
+            grain_size = (size[0] // scale, size[1] // scale)
+
+            # Create a grayscale noise array
+            # We use 128 as the neutral point so BLEND_RGB_ADD/SUB balances out
+            noise = np.random.randint(-intensity, intensity, (grain_size[0], grain_size[1], 3), dtype=np.int16)
+
+            # Create the surface
+            grain_surf = pygame.Surface(grain_size)
+            # Use a neutral gray background
+            grain_surf.fill((128, 128, 128))
+
+            # Add the noise to the gray
+            arr = pygame.surfarray.pixels3d(grain_surf).astype(np.int16)
+            arr += noise
+            np.clip(arr, 0, 255, out=arr)
+            pygame.surfarray.blit_array(grain_surf, arr.astype(np.uint8))
+
+            # Scale back up to full size if we downsampled
+            if scale > 1:
+                PostProcessing._grain_surface = pygame.transform.scale(grain_surf, size)
+            else:
+                PostProcessing._grain_surface = grain_surf
+
+            PostProcessing._grain_params = current_params
+
+        # 2. Apply the grain
+        offset = (0, 0)
+        if dynamic:
+            # Instead of regenerating noise (slow), we just jitter the existing texture
+            # 2000s film grain often "flashes" slightly.
+            offset = (np.random.randint(-10, 10), np.random.randint(-10, 10))
+
+        # BLEND_RGB_SUB or BLEND_RGB_MULT works, but for that 'film' look,
+        # BLEND_RGB_ADD with a slightly darker base or OVERLAY is best.
+        # Here we use standard alpha or soft light simulation:
+        surface.blit(PostProcessing._grain_surface, offset, special_flags=pygame.BLEND_RGB_SUB)
+
 
 class ParticleEmitter:
     def __init__(self, color=(0, 255, 255), count=1000, size=1, g=10, sparsity=0.75, deltax=0, deltay=0):

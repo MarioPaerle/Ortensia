@@ -32,12 +32,13 @@ class Sprite:
 class AnimatedSprite(Sprite):
     def __init__(self, x, y, w, h, cw=None, ch=None):
         super().__init__(x, y, w, h)
-        self.animations = {}  # Store lists of frames: {"idle": [surf1, surf2], "walk": [...]}
+        self.animations = {}
         self.current_state = "idle"
         self.frame_index = 0.0
         self.animation_speed = 10.0
 
         self.frect = pygame.FRect(x, y, w if cw is None else cw, h if ch is None else ch)
+        self.show_hitboxes = True
 
     def add_animation(self, name: str, frames: List[pygame.Surface]):
         """Register a list of surfaces for a specific state."""
@@ -53,6 +54,8 @@ class AnimatedSprite(Sprite):
 
             current_frame = int(self.frame_index)
             self.surface = self.animations[self.current_state][current_frame]
+        if self.show_hitboxes:
+            pygame.draw.rect(self.surface, (255, 255, 255), self.frect, width=15)
 
     def set_state(self, state: str):
         if self.current_state != state:
@@ -136,6 +139,33 @@ class SolidSprite(Sprite):
                 if dy < 0: self.frect.top = other.frect.bottom
 
         self.x, self.y = self.frect.x, self.frect.y
+
+
+class AnimatedSolidSprite(SolidSprite):
+    def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False, cw=None, ch=None):
+        super().__init__(x, y, w, h, color, texture=texture, alpha=alpha, cw=cw, ch=ch)
+        self.animations = {}
+        self.current_state = "idle"
+        self.frame_index = 0.0
+        self.animation_speed = 10.0
+
+    def add_animation(self, name, frames):
+        self.animations[name] = frames
+
+    def update_animation(self, dt):
+        if self.current_state in self.animations:
+            self.frame_index += self.animation_speed * dt
+
+            if self.frame_index >= len(self.animations[self.current_state]):
+                self.frame_index = 0
+
+            current_frame = int(self.frame_index)
+            self.surface = self.animations[self.current_state][current_frame]
+
+    def set_state(self, state):
+        if self.current_state != state:
+            self.current_state = state
+            self.frame_index = 0.0
 
 
 class Block(SolidSprite):
@@ -258,34 +288,3 @@ class FluidSprite(Sprite):
 
         if len(top_points) > 1:
             pygame.draw.lines(self.surface, (255, 255, 255), False, top_points.tolist(), 2)
-
-
-class AnimatedSolidSprite(SolidSprite):
-    def __init__(self, x, y, w, h, gw=None, gh=None):
-        super().__init__(x, y, w, h, (0, 0, 0, 0))
-        self.animations = {}
-        self.current_state = 'idle'
-        self.frame_index = 0.0
-        self.animation_speed = 12.0
-        self.frect = pygame.FRect(x, y, w, h)
-        self.gw = gw if gw is not None else w
-        self.gh = gh if gh is not None else h
-
-    def add_animation(self, name, frames):
-        scaled_frames = []
-        for f in frames:
-            scaled_f = pygame.transform.scale(f, (self.gw, self.gh))
-            scaled_frames.append(scaled_f.convert_alpha())
-        self.animations[name] = scaled_frames
-
-        if name == self.current_state:
-            self.surface = self.animations[name][0]
-
-    def update_animation(self, dt):
-        if self.current_state not in self.animations: return
-
-        frames = self.animations[self.current_state]
-        self.frame_index += self.animation_speed * dt
-
-        idx = int(self.frame_index) % len(frames)
-        self.surface = frames[idx]

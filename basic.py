@@ -13,7 +13,7 @@ class Engine(Game):
             self,
             name='Ortensia',
             base_size=(1000, 600),
-            flag=pygame.SCALED | pygame.RESIZABLE,
+            flag=pygame.SCALED | pygame.RESIZABLE | pygame.HWSURFACE,
             scaler=lambda x: int(x * 1),
 
     ):
@@ -30,6 +30,7 @@ class Engine(Game):
         self.updaters = []
         self.player = None
         self.g = 9.81
+        self.lut = create_lut_map("warm")
 
     def dt(self):
         return self.clock.tick(self.max_fps) / self.game_div
@@ -63,6 +64,9 @@ class Engine(Game):
 
 
         fps = self.clock.get_fps()
+        # apply_lut(self.screen, self.lut)
+        add_grain(self.screen, 10, dynamic=True)
+        add_vignette(self.screen, 0.33)
         pygame.display.set_caption(f"{self.name} | FPS: {int(fps)}")
         pygame.display.flip()
 
@@ -132,9 +136,9 @@ s = game.scaler
 # bg0 = game.add_create_layer("Background", 0.1)
 # bg1 = game.add_create_layer("Background", 0.2)
 # bg2 = game.add_create_layer("Background", 0.3)
-"""bg3 = game.add_create_layer("Background", 0.5)
+bg3 = game.add_create_layer("Background", 0.5)
 bg4 = game.add_create_layer("Background", 0.8)
-bg5 = game.add_create_layer("Background", 1)"""
+bg5 = game.add_create_layer("Background", 1)
 fg = LitLayer("Foreground", 1, ambient_color=(100, 100, 100))  # Dark ambient
 game.add_layer(fg)
 """
@@ -161,7 +165,6 @@ fg.add_light(wall_lamp3)"""
 # fg.add_effect(PostProcessing.motion_blur, game.main_camera, 3.5)
 # fg.add_effect(PostProcessing.black_and_white)
 # bg4.add_effect(PostProcessing.lumen, 60, 0.5)
-# fg.add_effect(PostProcessing.lumen, 30, 0.75)
 
 # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
 player = Player(s(400), s(300), s(64), s(64), game=game, cw=48)
@@ -188,15 +191,15 @@ for _ in range(50):
     pass
 
 game.particle_layer_idx = 2
-"""fg.add_light(LightSource(900, 580, radius=200, color=(255, 0, 0), falloff=0.99, steps=200))
+fg.add_light(LightSource(900, 580, radius=200, color=(255, 0, 0), falloff=0.99, steps=200))
 fg.add_light(LightSource(650, 580, radius=200, color=(125, 255, 255), falloff=0.99, steps=200))
 fg.add_static(Sprite(650, 580, 16, 128, texture="assets/textures/blocks/lamp.png", alpha=True))
-fg.add_static(Sprite(900, 580, 16, 128, texture="assets/textures/blocks/lamp.png", alpha=True))"""
+fg.add_static(Sprite(900, 580, 16, 128, texture="assets/textures/blocks/lamp.png", alpha=True))
 # bg0.add_static(Sprite(-100, -220, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/1.png', alpha=True))
 # bg2.add_static(Sprite(-100, -150, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/2.png', alpha=True))
 # bg3.add_static(Sprite(-100, -120, 2304/60/2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/3.png', alpha=True))
-"""bg4.add_static(Sprite(-100, -80, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/4.png', alpha=True))
-bg5.add_static(Sprite(-100, -20, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/5.png', alpha=True))"""
+bg4.add_static(Sprite(-100, -80, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/4.png', alpha=True))
+bg5.add_static(Sprite(-100, -20, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/5.png', alpha=True))
 base = SolidSprite(-100, 700, 3000, 10, (40, 40, 40))
 fg.add_static(base)
 game.solids.append(base)
