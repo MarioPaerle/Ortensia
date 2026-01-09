@@ -25,20 +25,24 @@ class Sprite:
             self.surface.fill(color)
 
     def move(self, dx, dy):
+        """Simple movement without collision detection"""
         self.x += dx
         self.y += dy
 
 
 class AnimatedSprite(Sprite):
+    """Non-solid animated sprite that doesn't interact with physics"""
+
     def __init__(self, x, y, w, h, cw=None, ch=None):
         super().__init__(x, y, w, h)
         self.animations = {}
         self.current_state = "idle"
         self.frame_index = 0.0
         self.animation_speed = 10.0
+        self.show_hitboxes = False
 
+        # Create a frect for visual reference, but it won't be used for collision
         self.frect = pygame.FRect(x, y, w if cw is None else cw, h if ch is None else ch)
-        self.show_hitboxes = True
 
     def add_animation(self, name: str, frames: List[pygame.Surface]):
         """Register a list of surfaces for a specific state."""
@@ -53,39 +57,33 @@ class AnimatedSprite(Sprite):
                 self.frame_index = 0
 
             current_frame = int(self.frame_index)
-            self.surface = self.animations[self.current_state][current_frame]
-        if self.show_hitboxes:
-            pygame.draw.rect(self.surface, (255, 255, 255), self.frect, width=15)
+            base_frame = self.animations[self.current_state][current_frame]
+
+            if self.show_hitboxes:
+                # Create a copy so we don't modify the original animation frame
+                self.surface = base_frame.copy()
+                hitbox_rect = pygame.Rect(
+                    self.frect.x - self.x,
+                    self.frect.y - self.y,
+                    self.frect.width,
+                    self.frect.height
+                )
+                pygame.draw.rect(self.surface, (255, 255, 255), hitbox_rect, width=2)
+            else:
+                self.surface = base_frame
 
     def set_state(self, state: str):
+        """Change animation state"""
         if self.current_state != state:
             self.current_state = state
             self.frame_index = 0.0
 
-    def move(self, dx, dy, grid):
-        self.frect.x += dx
-        collide = 'none'
-        for other in grid.get_nearby(self.frect):
-            if other is not self and self.frect.colliderect(other.frect):
-                if dx > 0:
-                    self.frect.right = other.frect.left
-                    collide = 'r'
-                if dx < 0:
-                    self.frect.left = other.frect.right
-                    collide = 'l'
-        self.frect.y += dy
-        for other in grid.get_nearby(self.frect):
-            if other is not self and self.frect.colliderect(other.frect):
-                if dy > 0:
-                    self.frect.bottom = other.frect.top
-                    collide = 'b'
-                if dy < 0:
-                    self.frect.top = other.frect.bottom
-                    collide = 'u'
-
-        self.x, self.y = self.frect.x, self.frect.y
-
-        return collide
+    def move(self, dx, dy):
+        """Simple movement without collision - updates both x,y and frect"""
+        self.x += dx
+        self.y += dy
+        self.frect.x = self.x
+        self.frect.y = self.y
 
 
 class SpatialGrid:
@@ -121,11 +119,63 @@ class SpatialGrid:
 
 
 class SolidSprite(Sprite):
-    def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False, cw=None, ch=None):
+    """Sprite with collision detection"""
+
+    def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False,
+                 cw=None, ch=None, coffset_x=0, coffset_y=0):
         super().__init__(x, y, w, h, color, texture=texture, alpha=alpha)
-        self.frect = pygame.FRect(x, y, w if cw is None else cw, h if ch is None else ch)
+
+        # Collision box dimensions
+        self.cw = w if cw is None else cw
+        self.ch = h if ch is None else ch
+
+        # Collision box offset from sprite position
+        self.coffset_x = coffset_x
+        self.coffset_y = coffset_y
+
+        # Create collision rect with offset
+        self.frect = pygame.FRect(x + coffset_x, y + coffset_y, self.cw, self.ch)
+
+        # Visual hitbox settings
+        self.show_hitboxes = False
+        self.hitbox_color = (255, 255, 255)
+        self.hitbox_width = 2
+
+    def set_hitbox(self, width=None, height=None, offset_x=None, offset_y=None):
+        """Dynamically adjust hitbox size and offset"""
+        if width is not None:
+            self.cw = width
+        if height is not None:
+            self.ch = height
+        if offset_x is not None:
+            self.coffset_x = offset_x
+        if offset_y is not None:
+            self.coffset_y = offset_y
+
+        # Update frect with new dimensions and offset
+        self.frect.width = self.cw
+        self.frect.height = self.ch
+        self.frect.x = self.x + self.coffset_x
+        self.frect.y = self.y + self.coffset_y
+
+    def draw_hitbox(self, surface=None):
+        """Draw hitbox visualization on surface (or self.surface if none provided)"""
+        if not self.show_hitboxes:
+            return
+
+        target = surface if surface is not None else self.surface
+
+        # Calculate hitbox position relative to sprite surface
+        hitbox_rect = pygame.Rect(
+            self.coffset_x,
+            self.coffset_y,
+            self.cw,
+            self.ch
+        )
+        pygame.draw.rect(target, self.hitbox_color, hitbox_rect, width=self.hitbox_width)
 
     def move(self, dx, dy, grid):
+        """Movement with collision detection"""
         self.frect.x += dx
         for other in grid.get_nearby(self.frect):
             if other is not self and self.frect.colliderect(other.frect):
@@ -138,21 +188,30 @@ class SolidSprite(Sprite):
                 if dy > 0: self.frect.bottom = other.frect.top
                 if dy < 0: self.frect.top = other.frect.bottom
 
-        self.x, self.y = self.frect.x, self.frect.y
+        # Update sprite position to match collision box (accounting for offset)
+        self.x = self.frect.x - self.coffset_x
+        self.y = self.frect.y - self.coffset_y
 
 
 class AnimatedSolidSprite(SolidSprite):
-    def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False, cw=None, ch=None):
-        super().__init__(x, y, w, h, color, texture=texture, alpha=alpha, cw=cw, ch=ch)
+    """Solid sprite with animations - combines physics with animation"""
+
+    def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False,
+                 cw=None, ch=None, coffset_x=0, coffset_y=0):
+
+        super().__init__(x, y, w, h, color, texture=texture, alpha=alpha,
+                         cw=cw, ch=ch, coffset_x=coffset_x, coffset_y=coffset_y)
         self.animations = {}
         self.current_state = "idle"
         self.frame_index = 0.0
         self.animation_speed = 10.0
 
-    def add_animation(self, name, frames):
+    def add_animation(self, name: str, frames: List[pygame.Surface]):
+        """Register a list of surfaces for a specific state."""
         self.animations[name] = frames
 
     def update_animation(self, dt):
+        """Advances the frame index based on time."""
         if self.current_state in self.animations:
             self.frame_index += self.animation_speed * dt
 
@@ -160,12 +219,50 @@ class AnimatedSolidSprite(SolidSprite):
                 self.frame_index = 0
 
             current_frame = int(self.frame_index)
-            self.surface = self.animations[self.current_state][current_frame]
+            base_frame = self.animations[self.current_state][current_frame]
 
-    def set_state(self, state):
+            if self.show_hitboxes:
+                # Create a copy so we don't modify the original animation frame
+                self.surface = base_frame.copy()
+                self.draw_hitbox()
+            else:
+                self.surface = base_frame
+
+    def set_state(self, state: str):
+        """Change animation state"""
         if self.current_state != state:
             self.current_state = state
             self.frame_index = 0.0
+
+    def move(self, dx, dy, grid):
+        """Movement with collision detection (inherited from SolidSprite)"""
+        # Store collision info
+        collide = 'none'
+
+        self.frect.x += dx
+        for other in grid.get_nearby(self.frect):
+            if other is not self and self.frect.colliderect(other.frect):
+                if dx > 0:
+                    self.frect.right = other.frect.left
+                    collide = 'r'
+                if dx < 0:
+                    self.frect.left = other.frect.right
+                    collide = 'l'
+
+        self.frect.y += dy
+        for other in grid.get_nearby(self.frect):
+            if other is not self and self.frect.colliderect(other.frect):
+                if dy > 0:
+                    self.frect.bottom = other.frect.top
+                    collide = 'b'
+                if dy < 0:
+                    self.frect.top = other.frect.bottom
+                    collide = 'u'
+
+        # Update sprite position to match collision box (accounting for offset)
+        self.x = self.frect.x - self.coffset_x
+        self.y = self.frect.y - self.coffset_y
+        return collide
 
 
 class Block(SolidSprite):
@@ -204,12 +301,11 @@ class Block(SolidSprite):
         new_block.frect.topleft = (x, y)
         new_block.x = x
         new_block.y = y
-        # new_block.rect.topleft = (x, y)
 
         return new_block
 
     def __repr__(self):
-        return f'<Block {self.id} at {self.rect.topleft}>'
+        return f'<Block {self.id} at {self.frect.topleft}>'
 
 
 class FluidSprite(Sprite):

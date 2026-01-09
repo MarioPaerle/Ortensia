@@ -656,7 +656,6 @@ class FireflyEmitter(ParticleEmitter):
 
 class Game:
     def __init__(self, w=200, h=300, title="Ortensia Engine", flag=pygame.RESIZABLE | pygame.SCALED | pygame.DOUBLEBUF, icon=None):
-        pygame.init()
         self.screen = pygame.display.set_mode((w, h), flag)
         pygame.display.set_caption(title)
         if icon is not None:

@@ -1,6 +1,9 @@
 import pygame
+pygame.init()
+
 from Graphic.base import *
 from Graphic.functions import *
+import random
 
 
 class Map:
@@ -77,16 +80,24 @@ class Engine(Game):
             emitter.update(dt)
 
 
-class Player(AnimatedSprite):
-    def __init__(self, x, y, w, h, game, cw=None, ch=None):
-        AnimatedSprite.__init__(self, x, y, w, h, cw, ch)
+class Player(AnimatedSolidSprite):
+    def __init__(self, x, y, w, h, game, cw=None, ch=None, coffset_x=0, coffset_y=0):
+        super().__init__(x, y, w, h, cw=cw, ch=ch, coffset_x=coffset_x, coffset_y=coffset_y)
         self.game = game
         self.vx = 0
         self.vy = 0
         self.added = False
+        self.on_floor = False
 
-    def physics(self, dt):
+    def physics(self, dt, dx, dy):
         self.vy += 9.81 * dt
+
+        collide = self.move(dx, dy, self.game.grid)
+
+        self.on_floor = False
+        if collide == 'b':
+            self.vy = 0
+            self.on_floor = True
         pass
 
     def mechaniches(self, keys, dt):
@@ -95,7 +106,8 @@ class Player(AnimatedSprite):
 
         if keys[pygame.K_LEFT]:  dx -= speed
         if keys[pygame.K_RIGHT]: dx += speed
-        if keys[pygame.K_UP]:    dy -= speed*10
+        if keys[pygame.K_UP] and self.on_floor:
+            self.vy = - 3
         if keys[pygame.K_DOWN]:  dy += speed
         if keys[pygame.K_q]:  game.main_camera.apply_zoom(0.5*dt)
         if keys[pygame.K_e]:  game.main_camera.apply_zoom(-0.5*dt)
@@ -104,17 +116,14 @@ class Player(AnimatedSprite):
             self.game.main_camera.shake_intensity = 1
             fg.add_light(wall_lamp4)
         wall_lamp4.x, wall_lamp4.y = self.x, self.y
-        self.physics(dt)
+        self.physics(dt, dx, dy)
 
         if dx != 0 or dy != 0:
             self.set_state("walk")
         else:
             self.set_state("idle")
 
-        collide = self.move(dx, dy, self.game.grid)
 
-        if collide == 'b':
-            self.vy = 0
 
         self.update_animation(dt)
         water.update(interactors=[self])
@@ -122,7 +131,7 @@ class Player(AnimatedSprite):
         mouse_buttons = pygame.mouse.get_pressed()
         mx, my = pygame.mouse.get_pos()
         if mouse_buttons[0]:
-            map_system.place_tile(mx, my, block=terra)
+            map_system.place_tile(mx, my, block=random.choice(list(RAPIDBLOCKS.values())))
             game.refresh_grid()
 
         if mouse_buttons[2]:
@@ -147,7 +156,6 @@ particles2 = game.add_create_layer("particles", 2.3)
 """
 terrain_layer = game.add_create_layer("Terrain", 1)
 
-terra = Block(32, 32, 1, texture='assets/textures/blocks/bleh.png')
 map_system = BlockMap(game, terrain_layer, tile_size=s(32))
 # fg = game.add_create_layer("Foreground", 1.0)
 
@@ -167,8 +175,10 @@ fg.add_light(wall_lamp3)"""
 # bg4.add_effect(PostProcessing.lumen, 60, 0.5)
 
 # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
-player = Player(s(400), s(300), s(64), s(64), game=game, cw=48)
+from blocks import *
+player = Player(s(400), s(300), s(64), s(64), game=game, cw=16, coffset_x=23, coffset_y=-6)
 player.add_animation('walk', load_spritesheet("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1)))
+player.show_hitboxes = True
 fg.sprites.append(player)
 water = FluidSprite(s(500), s(650), s(600), s(100), color=(50, 100, 255, 120))
 # fg.sprites.append(water)
