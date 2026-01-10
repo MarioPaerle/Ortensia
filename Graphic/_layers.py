@@ -254,8 +254,8 @@ class ChunkedLayer:
                     s.update()
                 layer_surf.blit(s.surface, (int(sx), int(sy)))
 
-        if len(self.sprites) != 0:
-            print(self.sprites)
+        """if len(self.sprites) != 0:
+            print(self.sprites)"""
 
         if emitters is not None:
             for emitter in emitters:
@@ -498,6 +498,7 @@ class BlockMap:
         self.tile_size = tile_size
         self.texture = texture
         self.data = {}
+        self.physics_blocks = []  # Track physics-enabled blocks
 
     def get_grid_pos(self, screen_x, screen_y):
         cam_x = self.game.main_camera.x * self.layer.parallax
@@ -524,6 +525,10 @@ class BlockMap:
         self.game.solids.append(tile_sprite)
         self.data[(gx, gy)] = tile_sprite
 
+        # Track physics blocks separately
+        if tile_sprite.physics_block:
+            self.physics_blocks.append(tile_sprite)
+
     def remove_tile(self, screen_x, screen_y):
         gx, gy = self.get_grid_pos(screen_x, screen_y)
 
@@ -533,5 +538,53 @@ class BlockMap:
             self.layer.remove_static(sprite)
             if sprite in self.game.solids:
                 self.game.solids.remove(sprite)
+            if sprite in self.physics_blocks:
+                self.physics_blocks.remove(sprite)
 
             del self.data[(gx, gy)]
+
+    def update(self, dt):
+        """
+        Update all physics-enabled blocks.
+        Call this in your game loop after refresh_grid().
+        """
+        if not self.physics_blocks:
+            return
+
+        # Track blocks that need chunk reassignment
+        blocks_to_reassign = []
+
+        for block in self.physics_blocks:
+            moved = block.update_physics(dt, self.game.grid)
+
+            # If block moved significantly, we may need to update its chunk
+            if moved and block.is_grounded:
+                # Calculate new grid position
+                new_gx = int(block.x // self.tile_size)
+                new_gy = int(block.y // self.tile_size)
+
+                # Find old position in data
+                old_key = None
+                for key, sprite in self.data.items():
+                    if sprite is block:
+                        old_key = key
+                        break
+
+                # If position changed, update data dictionary
+                if old_key and old_key != (new_gx, new_gy):
+                    blocks_to_reassign.append((block, old_key, (new_gx, new_gy)))
+
+        # Reassign blocks to new grid positions
+        for block, old_key, new_key in blocks_to_reassign:
+            # Remove from old chunk
+            self.layer.remove_static(block)
+            del self.data[old_key]
+
+            # Add to new chunk
+            self.layer.add_static(block)
+            self.data[new_key] = block
+
+            # Refresh grid to ensure collision detection works
+            self.game.grid.clear()
+            for obj in self.game.solids:
+                self.game.grid.insert(obj)

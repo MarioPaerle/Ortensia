@@ -115,7 +115,7 @@ class Player(AnimatedSolidSprite):
             self.added = True
             self.game.main_camera.shake_intensity = 1
             fg.add_light(wall_lamp4)
-        wall_lamp4.x, wall_lamp4.y = self.x, self.y
+        # wall_lamp4.x, wall_lamp4.y = self.x, self.y
         self.physics(dt, dx, dy)
 
         if dx != 0 or dy != 0:
@@ -123,108 +123,108 @@ class Player(AnimatedSolidSprite):
         else:
             self.set_state("idle")
 
-
-
         self.update_animation(dt)
-        water.update(interactors=[self])
+        # water.update(interactors=[self])
 
         mouse_buttons = pygame.mouse.get_pressed()
         mx, my = pygame.mouse.get_pos()
         if mouse_buttons[0]:
-            map_system.place_tile(mx, my, block=random.choice(list(RAPIDBLOCKS.values())))
+            block = random.choice(list(RAPIDBLOCKS.values()))
+            map_system.place_tile(mx, my, block=block)
+            print(block.physics_block)
             game.refresh_grid()
 
         if mouse_buttons[2]:
             map_system.remove_tile(mx, my)
             game.refresh_grid()
 
+if __name__ == "__main__":
+    game = Engine(name='Ortensia', base_size=(1000, 600), flag=pygame.SCALED | pygame.RESIZABLE)
 
-game = Engine(name='Ortensia', base_size=(1000, 600), flag=pygame.SCALED | pygame.RESIZABLE)
+    s = game.scaler
+    # bg0 = game.add_create_layer("Background", 0.1)
+    # bg1 = game.add_create_layer("Background", 0.2)
+    # bg2 = game.add_create_layer("Background", 0.3)
+    bg3 = game.add_create_layer("Background", 0.5)
+    bg4 = game.add_create_layer("Background", 0.8)
+    bg5 = game.add_create_layer("Background", 1)
+    fg = LitLayer("Foreground", 1, ambient_color=(100, 100, 100))  # Dark ambient
+    game.add_layer(fg)
+    """
+    particles = game.add_create_layer("particles", 1.5)
+    particles2 = game.add_create_layer("particles", 2.3)
+    """
+    terrain_layer = game.add_create_layer("Terrain", 1)
 
-s = game.scaler
-# bg0 = game.add_create_layer("Background", 0.1)
-# bg1 = game.add_create_layer("Background", 0.2)
-# bg2 = game.add_create_layer("Background", 0.3)
-bg3 = game.add_create_layer("Background", 0.5)
-bg4 = game.add_create_layer("Background", 0.8)
-bg5 = game.add_create_layer("Background", 1)
-fg = LitLayer("Foreground", 1, ambient_color=(100, 100, 100))  # Dark ambient
-game.add_layer(fg)
-"""
-particles = game.add_create_layer("particles", 1.5)
-particles2 = game.add_create_layer("particles", 2.3)
-"""
-terrain_layer = game.add_create_layer("Terrain", 1)
+    map_system = BlockMap(game, terrain_layer, tile_size=s(32))
+    # fg = game.add_create_layer("Foreground", 1.0)
 
-map_system = BlockMap(game, terrain_layer, tile_size=s(32))
-# fg = game.add_create_layer("Foreground", 1.0)
+    wall_lamp4 = LightSource(s(250), s(200), radius=s(200), color=(20, 126, 126), falloff=0.99, steps=100)
+    """wall_lamp3 = LightSource(s(130), s(400), radius=s(200), color=(255, 60, 60), falloff=0.1, steps=10)
+    wall_lamp = LightSource(s(600), s(450), radius=s(200), color=(60, 255, 60), falloff=0.99, steps=100)
+    wall_lamp2 = LightSource(s(900), s(450), radius=s(200), color=(60, 60, 255), falloff=0.99, steps=100)"""
+    """fg.add_light(wall_lamp)
+    fg.add_light(wall_lamp2)
+    fg.add_light(wall_lamp3)"""
 
-wall_lamp4 = LightSource(s(250), s(200), radius=s(200), color=(20, 126, 126), falloff=0.99, steps=100)
-"""wall_lamp3 = LightSource(s(130), s(400), radius=s(200), color=(255, 60, 60), falloff=0.1, steps=10)
-wall_lamp = LightSource(s(600), s(450), radius=s(200), color=(60, 255, 60), falloff=0.99, steps=100)
-wall_lamp2 = LightSource(s(900), s(450), radius=s(200), color=(60, 60, 255), falloff=0.99, steps=100)"""
-"""fg.add_light(wall_lamp)
-fg.add_light(wall_lamp2)
-fg.add_light(wall_lamp3)"""
+    # fg.add_effect(PostProcessing.fog, 1, 3)
+    # particles.add_effect(PostProcessing.lumen, 4, 2)
+    # particles2.add_effect(PostProcessing.lumen, 4, 2)
+    # fg.add_effect(PostProcessing.motion_blur, game.main_camera, 3.5)
+    # fg.add_effect(PostProcessing.black_and_white)
+    # bg4.add_effect(PostProcessing.lumen, 60, 0.5)
 
-# fg.add_effect(PostProcessing.fog, 1, 3)
-# particles.add_effect(PostProcessing.lumen, 4, 2)
-# particles2.add_effect(PostProcessing.lumen, 4, 2)
-# fg.add_effect(PostProcessing.motion_blur, game.main_camera, 3.5)
-# fg.add_effect(PostProcessing.black_and_white)
-# bg4.add_effect(PostProcessing.lumen, 60, 0.5)
+    # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
+    from blocks import *
+    player = Player(s(400), s(300), s(64), s(64), game=game, cw=16, coffset_x=23, coffset_y=-6)
+    player.add_animation('walk', load_spritesheet("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1)))
+    player.show_hitboxes = True
+    fg.sprites.append(player)
+    water = FluidSprite(s(500), s(650), s(600), s(100), color=(50, 100, 255, 120))
+    # fg.sprites.append(water)
+    game.solids.append(player)
+    game.main_camera.target = player
 
-# player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
-from blocks import *
-player = Player(s(400), s(300), s(64), s(64), game=game, cw=16, coffset_x=23, coffset_y=-6)
-player.add_animation('walk', load_spritesheet("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1)))
-player.show_hitboxes = True
-fg.sprites.append(player)
-water = FluidSprite(s(500), s(650), s(600), s(100), color=(50, 100, 255, 120))
-# fg.sprites.append(water)
-game.solids.append(player)
-game.main_camera.target = player
+    emitter1 = ParticleEmitter(size=s(1.5), sparsity=0.2, g=40, color='random', deltax=s(20), deltay=s(20))
+    ff = FireflyEmitter(count=100, size=1)
+    ff2 = FireflyEmitter(count=100, size=1)
+    emitter1.track(player)
+    """particles.emitters.append(ff)
+    particles2.emitters.append(ff2)"""
+    # game.particle_emitters.append(emitter1)
 
-emitter1 = ParticleEmitter(size=s(1.5), sparsity=0.2, g=40, color='random', deltax=s(20), deltay=s(20))
-ff = FireflyEmitter(count=100, size=1)
-ff2 = FireflyEmitter(count=100, size=1)
-emitter1.track(player)
-"""particles.emitters.append(ff)
-particles2.emitters.append(ff2)"""
-# game.particle_emitters.append(emitter1)
+    for _ in range(50):
+        ff.emit(random.randint(0, 1000), random.randint(200, 500), 1)
+        pass
+    for _ in range(50):
+        ff2.emit(random.randint(0, 1000), random.randint(200, 500), 1)
+        pass
 
-for _ in range(50):
-    ff.emit(random.randint(0, 1000), random.randint(200, 500), 1)
-    pass
-for _ in range(50):
-    ff2.emit(random.randint(0, 1000), random.randint(200, 500), 1)
-    pass
+    game.particle_layer_idx = 2
+    fg.add_light(LightSource(900, 580, radius=200, color=(255, 0, 0), falloff=0.99, steps=200))
+    fg.add_light(LightSource(650, 580, radius=200, color=(125, 255, 255), falloff=0.99, steps=200))
+    fg.add_static(Sprite(650, 580, 16, 128, texture="assets/textures/blocks/lamp.png", alpha=True))
+    fg.add_static(Sprite(900, 580, 16, 128, texture="assets/textures/blocks/lamp.png", alpha=True))
+    # bg0.add_static(Sprite(-100, -220, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/1.png', alpha=True))
+    # bg2.add_static(Sprite(-100, -150, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/2.png', alpha=True))
+    # bg3.add_static(Sprite(-100, -120, 2304/60/2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/3.png', alpha=True))
+    bg4.add_static(Sprite(-100, -80, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/4.png', alpha=True))
+    bg5.add_static(Sprite(-100, -20, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/5.png', alpha=True))
+    base = SolidSprite(-100, 700, 3000, 10, (40, 40, 40))
+    fg.add_static(base)
+    game.solids.append(base)
+    """for i in range(15):
+        if i % 3 == 0:
+            wall = SolidSprite(i * s(400), s(450), s(60), s(150), (255, 20, 50))
+            fg.sprites.append(wall)
+            game.solids.append(wall)
+        else:
+            wall = Sprite(i * s(400), s(450), s(60), s(150), (30, 70, 40))
+            fg.sprites.append(wall)
+    """
 
-game.particle_layer_idx = 2
-fg.add_light(LightSource(900, 580, radius=200, color=(255, 0, 0), falloff=0.99, steps=200))
-fg.add_light(LightSource(650, 580, radius=200, color=(125, 255, 255), falloff=0.99, steps=200))
-fg.add_static(Sprite(650, 580, 16, 128, texture="assets/textures/blocks/lamp.png", alpha=True))
-fg.add_static(Sprite(900, 580, 16, 128, texture="assets/textures/blocks/lamp.png", alpha=True))
-# bg0.add_static(Sprite(-100, -220, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/1.png', alpha=True))
-# bg2.add_static(Sprite(-100, -150, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/2.png', alpha=True))
-# bg3.add_static(Sprite(-100, -120, 2304/60/2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/3.png', alpha=True))
-bg4.add_static(Sprite(-100, -80, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/4.png', alpha=True))
-bg5.add_static(Sprite(-100, -20, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/5.png', alpha=True))
-base = SolidSprite(-100, 700, 3000, 10, (40, 40, 40))
-fg.add_static(base)
-game.solids.append(base)
-"""for i in range(15):
-    if i % 3 == 0:
-        wall = SolidSprite(i * s(400), s(450), s(60), s(150), (255, 20, 50))
-        fg.sprites.append(wall)
-        game.solids.append(wall)
-    else:
-        wall = Sprite(i * s(400), s(450), s(60), s(150), (30, 70, 40))
-        fg.sprites.append(wall)
-"""
-
-game.player = player
-game.cameras.append(Camera)
-game.refresh_grid()
-while game.running:
-    game.update()
+    game.player = player
+    game.cameras.append(Camera)
+    game.refresh_grid()
+    while game.running:
+        game.update()
