@@ -4,6 +4,7 @@ import random
 from Graphic._sprites import *
 from Graphic.functions import scale_color
 import math
+from Graphic.functions import flag
 
 
 @dataclass
@@ -345,6 +346,7 @@ class LitLayer(ChunkedLayer):
 
     def add_light(self, light: LightSource):
         self.lights.append(light)
+        return light
 
     def render(self, screen, camera, emitters=None):
         if not self.visible: return
@@ -492,13 +494,14 @@ class TileMap:
 
 
 class BlockMap:
-    def __init__(self, game, layer: ChunkedLayer, tile_size=40, texture=None):
+    def __init__(self, game, layer: LitLayer, tile_size=40, texture=None):
         self.game = game
         self.layer = layer
         self.tile_size = tile_size
         self.texture = texture
         self.data = {}
         self.physics_blocks = []  # Track physics-enabled blocks
+        self.lights = {}
 
     def get_grid_pos(self, screen_x, screen_y):
         cam_x = self.game.main_camera.x * self.layer.parallax
@@ -520,6 +523,10 @@ class BlockMap:
         world_y = gy * self.tile_size
 
         tile_sprite = block.place(world_x, world_y)
+        if block.light_emission_intensity > 0 and isinstance(self.layer, LitLayer) and not block.physics_block:
+            self.lights[(gx, gy)] = self.layer.add_light(LightSource(world_x, world_x, radius=200, color=block.light_emission_color, falloff=0.99, steps=200))
+        if block.light_emission_intensity > 0 and isinstance(self.layer, LitLayer) and block.physics_block:
+            flag("Light Emitting Blocks do not support Physic as for now", level=2)
 
         self.layer.add_static(tile_sprite)
         self.game.solids.append(tile_sprite)
@@ -542,49 +549,40 @@ class BlockMap:
                 self.physics_blocks.remove(sprite)
 
             del self.data[(gx, gy)]
+        if (gx, gy) in self.lights:
+            self.layer.lights.remove(self.lights[(gx, gy)])
+            del self.lights[(gx, gy)]
+
 
     def update(self, dt):
-        """
-        Update all physics-enabled blocks.
-        Call this in your game loop after refresh_grid().
-        """
         if not self.physics_blocks:
             return
 
-        # Track blocks that need chunk reassignment
         blocks_to_reassign = []
 
         for block in self.physics_blocks:
             moved = block.update_physics(dt, self.game.grid)
 
-            # If block moved significantly, we may need to update its chunk
             if moved and block.is_grounded:
-                # Calculate new grid position
                 new_gx = int(block.x // self.tile_size)
                 new_gy = int(block.y // self.tile_size)
 
-                # Find old position in data
                 old_key = None
                 for key, sprite in self.data.items():
                     if sprite is block:
                         old_key = key
                         break
 
-                # If position changed, update data dictionary
                 if old_key and old_key != (new_gx, new_gy):
                     blocks_to_reassign.append((block, old_key, (new_gx, new_gy)))
 
-        # Reassign blocks to new grid positions
         for block, old_key, new_key in blocks_to_reassign:
-            # Remove from old chunk
             self.layer.remove_static(block)
             del self.data[old_key]
 
-            # Add to new chunk
             self.layer.add_static(block)
             self.data[new_key] = block
 
-            # Refresh grid to ensure collision detection works
             self.game.grid.clear()
             for obj in self.game.solids:
                 self.game.grid.insert(obj)

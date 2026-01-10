@@ -1,6 +1,23 @@
 import pygame
 import numpy as np
+from colorama import Fore
 
+RED = Fore.RED
+BLUE = Fore.BLUE
+GREEN = Fore.LIGHTGREEN_EX
+RES = Fore.RESET
+YEL = Fore.YELLOW
+
+
+def flag(message, level=1):
+    if level == 0:
+        print(f"{BLUE}|Success|: {message}{RES}")
+    if level == 1:
+        print(f"{BLUE}|Ortensia|: {message}{RES}")
+    if level == 2:
+        print(f"{YEL}|Warning|: {message}{RES}")
+    if level == 3:
+        print(f"{RED}|Error|: {message}{RES}")
 
 def load_spritesheet(filename, frame_w, frame_h, row='all', scale=(1, 1)):
     sheet = pygame.image.load(filename).convert_alpha()

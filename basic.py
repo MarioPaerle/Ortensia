@@ -98,6 +98,8 @@ class Player(AnimatedSolidSprite):
         if collide == 'b':
             self.vy = 0
             self.on_floor = True
+
+        map_system.update(dt)
         pass
 
     def mechaniches(self, keys, dt):
@@ -115,7 +117,7 @@ class Player(AnimatedSolidSprite):
             self.added = True
             self.game.main_camera.shake_intensity = 1
             fg.add_light(wall_lamp4)
-        # wall_lamp4.x, wall_lamp4.y = self.x, self.y
+        wall_lamp4.x, wall_lamp4.y = self.x, self.y
         self.physics(dt, dx, dy)
 
         if dx != 0 or dy != 0:
@@ -131,7 +133,6 @@ class Player(AnimatedSolidSprite):
         if mouse_buttons[0]:
             block = random.choice(list(RAPIDBLOCKS.values()))
             map_system.place_tile(mx, my, block=block)
-            print(block.physics_block)
             game.refresh_grid()
 
         if mouse_buttons[2]:
@@ -156,7 +157,7 @@ if __name__ == "__main__":
     """
     terrain_layer = game.add_create_layer("Terrain", 1)
 
-    map_system = BlockMap(game, terrain_layer, tile_size=s(32))
+    map_system = BlockMap(game, fg, tile_size=s(32))
     # fg = game.add_create_layer("Foreground", 1.0)
 
     wall_lamp4 = LightSource(s(250), s(200), radius=s(200), color=(20, 126, 126), falloff=0.99, steps=100)
