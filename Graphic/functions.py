@@ -19,6 +19,7 @@ def flag(message, level=1):
     if level == 3:
         print(f"{RED}|Error|: {message}{RES}")
 
+
 def load_spritesheet(filename, frame_w, frame_h, row='all', scale=(1, 1)):
     sheet = pygame.image.load(filename).convert_alpha()
     frames = []

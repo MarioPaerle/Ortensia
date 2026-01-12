@@ -1,14 +1,10 @@
 import pygame
+
 pygame.init()
 
 from Graphic.base import *
 from Graphic.functions import *
 import random
-
-
-class Map:
-    def __init__(self):
-        pass
 
 
 class Engine(Game):
@@ -65,6 +61,8 @@ class Engine(Game):
                 for emitter in layer.emitters:
                     emitter.update(dt)
 
+            if hasattr(layer, 'update'):
+                layer.update(dt)
 
         fps = self.clock.get_fps()
         # apply_lut(self.screen, self.lut)
@@ -88,6 +86,7 @@ class Player(AnimatedSolidSprite):
         self.vy = 0
         self.added = False
         self.on_floor = False
+        self.inventory = {}
 
     def physics(self, dt, dx, dy):
         self.vy += 9.81 * dt
@@ -100,7 +99,6 @@ class Player(AnimatedSolidSprite):
             self.on_floor = True
 
         map_system.update(dt)
-        pass
 
     def mechaniches(self, keys, dt):
         speed = 60 * dt
@@ -109,10 +107,10 @@ class Player(AnimatedSolidSprite):
         if keys[pygame.K_LEFT]:  dx -= speed
         if keys[pygame.K_RIGHT]: dx += speed
         if keys[pygame.K_UP] and self.on_floor:
-            self.vy = - 3
+            self.vy = - 4
         if keys[pygame.K_DOWN]:  dy += speed
-        if keys[pygame.K_q]:  game.main_camera.apply_zoom(0.5*dt)
-        if keys[pygame.K_e]:  game.main_camera.apply_zoom(-0.5*dt)
+        if keys[pygame.K_q]:  game.main_camera.apply_zoom(0.5 * dt)
+        if keys[pygame.K_e]:  game.main_camera.apply_zoom(-0.5 * dt)
         if keys[pygame.K_SPACE] and not self.added:
             self.added = True
             self.game.main_camera.shake_intensity = 1
@@ -139,6 +137,7 @@ class Player(AnimatedSolidSprite):
             map_system.remove_tile(mx, my)
             game.refresh_grid()
 
+
 if __name__ == "__main__":
     game = Engine(name='Ortensia', base_size=(1000, 600), flag=pygame.SCALED | pygame.RESIZABLE)
 
@@ -149,6 +148,20 @@ if __name__ == "__main__":
     bg3 = game.add_create_layer("Background", 0.5)
     bg4 = game.add_create_layer("Background", 0.8)
     bg5 = game.add_create_layer("Background", 1)
+    ui_layer = UILayer("HUD")
+
+
+    def on_reset_click():
+        score_label.set_text("Score: Reset!")
+
+
+    score_label = UIText(x=20, y=20, text="Score: 0", size=30, color=(255, 215, 0), shadow=True, font_name='minecraftia')
+    ui_layer.add_element(score_label)
+    reset_btn = UIButton(x=20, y=60, width=120, height=40, text="Reset Cam",
+                         bg_color=(200, 50, 50), on_click=on_reset_click)
+    ui_layer.add_element(reset_btn)
+    game.add_layer(ui_layer)
+
     fg = LitLayer("Foreground", 1, ambient_color=(100, 100, 100))  # Dark ambient
     game.add_layer(fg)
     """
@@ -177,6 +190,7 @@ if __name__ == "__main__":
 
     # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
     from blocks import *
+
     player = Player(s(400), s(300), s(64), s(64), game=game, cw=16, coffset_x=23, coffset_y=-6)
     player.add_animation('walk', load_spritesheet("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1)))
     player.show_hitboxes = True
@@ -209,8 +223,10 @@ if __name__ == "__main__":
     # bg0.add_static(Sprite(-100, -220, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/1.png', alpha=True))
     # bg2.add_static(Sprite(-100, -150, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/2.png', alpha=True))
     # bg3.add_static(Sprite(-100, -120, 2304/60/2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/3.png', alpha=True))
-    bg4.add_static(Sprite(-100, -80, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/4.png', alpha=True))
-    bg5.add_static(Sprite(-100, -20, 2304//2, 1396//2, (40, 40, 80), texture='assets/textures/backgrounds/5.png', alpha=True))
+    bg4.add_static(
+        Sprite(-100, -80, 2304 // 2, 1396 // 2, (40, 40, 80), texture='assets/textures/backgrounds/4.png', alpha=True))
+    bg5.add_static(
+        Sprite(-100, -20, 2304 // 2, 1396 // 2, (40, 40, 80), texture='assets/textures/backgrounds/5.png', alpha=True))
     base = SolidSprite(-100, 700, 3000, 10, (40, 40, 40))
     fg.add_static(base)
     game.solids.append(base)

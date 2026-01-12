@@ -5,6 +5,7 @@ from Graphic._sprites import *
 from Graphic.functions import scale_color
 import math
 from Graphic.functions import flag
+from Graphic.gui import *
 
 
 @dataclass
@@ -175,23 +176,38 @@ class ChunkedLayer:
     def add_dynamic(self, sprite):
         self.sprites.append(sprite)
 
-    def remove_static(self, sprite):
+    def remove_static(self, sprite, x=None, y=None):
         # Check large sprites first
         if sprite in self.large_sprites:
             self.large_sprites.remove(sprite)
             return True
 
-        cx = int(sprite.x // self.chunk_size)
-        cy = int(sprite.y // self.chunk_size)
+        # Use explicit coordinates if provided, otherwise default to sprite.x/y
+        # This is the key fix for moving blocks!
+        check_x = x if x is not None else sprite.x
+        check_y = y if y is not None else sprite.y
+
+        cx = int(check_x // self.chunk_size)
+        cy = int(check_y // self.chunk_size)
 
         if (cx, cy) in self.chunks:
             if sprite in self.chunks[(cx, cy)]:
                 self.chunks[(cx, cy)].remove(sprite)
                 return True
+
+        # Fallback: If not found in the calculated chunk, scan neighbors
+        # (Handles edge cases where rounding errors caused a mismatch)
+        for ox in [-1, 0, 1]:
+            for oy in [-1, 0, 1]:
+                ncx, ncy = cx + ox, cy + oy
+                if (ncx, ncy) in self.chunks:
+                    if sprite in self.chunks[(ncx, ncy)]:
+                        self.chunks[(ncx, ncy)].remove(sprite)
+                        return True
+
         return False
 
     def _get_view_surface(self, view_w, view_h):
-        """Smart allocation for the render surface."""
         alloc_w, alloc_h = 0, 0
         if self._cached_surf:
             alloc_w, alloc_h = self._cached_surf.get_size()
@@ -500,7 +516,7 @@ class BlockMap:
         self.tile_size = tile_size
         self.texture = texture
         self.data = {}
-        self.physics_blocks = []  # Track physics-enabled blocks
+        self.physics_blocks = []
         self.lights = {}
 
     def get_grid_pos(self, screen_x, screen_y):
@@ -524,7 +540,8 @@ class BlockMap:
 
         tile_sprite = block.place(world_x, world_y)
         if block.light_emission_intensity > 0 and isinstance(self.layer, LitLayer) and not block.physics_block:
-            self.lights[(gx, gy)] = self.layer.add_light(LightSource(world_x, world_x, radius=200, color=block.light_emission_color, falloff=0.99, steps=200))
+            self.lights[(gx, gy)] = self.layer.add_light(
+                LightSource(world_x, world_x, radius=200, color=block.light_emission_color, falloff=0.99, steps=200))
         if block.light_emission_intensity > 0 and isinstance(self.layer, LitLayer) and block.physics_block:
             flag("Light Emitting Blocks do not support Physic as for now", level=2)
 
@@ -532,13 +549,12 @@ class BlockMap:
         self.game.solids.append(tile_sprite)
         self.data[(gx, gy)] = tile_sprite
 
-        # Track physics blocks separately
         if tile_sprite.physics_block:
             self.physics_blocks.append(tile_sprite)
 
     def remove_tile(self, screen_x, screen_y):
-        gx, gy = self.get_grid_pos(screen_x, screen_y)
-
+        gx, gy = self.get_grid_pos(screen_x, screen_y - 10)
+        print(gx, gy, self.data, self.layer.sprites)
         if (gx, gy) in self.data:
             sprite = self.data[(gx, gy)]
 
@@ -553,7 +569,6 @@ class BlockMap:
             self.layer.lights.remove(self.lights[(gx, gy)])
             del self.lights[(gx, gy)]
 
-
     def update(self, dt):
         if not self.physics_blocks:
             return
@@ -561,6 +576,7 @@ class BlockMap:
         blocks_to_reassign = []
 
         for block in self.physics_blocks:
+            # Physics updates the X/Y of the block object immediately
             moved = block.update_physics(dt, self.game.grid)
 
             if moved and block.is_grounded:
@@ -568,6 +584,8 @@ class BlockMap:
                 new_gy = int(block.y // self.tile_size)
 
                 old_key = None
+                # Optimization Note: This loop is O(N) and can be slow if map is huge.
+                # Consider storing grid_pos on the block itself later.
                 for key, sprite in self.data.items():
                     if sprite is block:
                         old_key = key
@@ -577,7 +595,14 @@ class BlockMap:
                     blocks_to_reassign.append((block, old_key, (new_gx, new_gy)))
 
         for block, old_key, new_key in blocks_to_reassign:
-            self.layer.remove_static(block)
+            # CALCULATE OLD WORLD POSITION
+            # We assume the block was roughly at the top-left of the old grid cell
+            old_world_x = old_key[0] * self.tile_size
+            old_world_y = old_key[1] * self.tile_size
+
+            # Pass the OLD coordinates to ensure we look in the correct Chunk list
+            self.layer.remove_static(block, x=old_world_x, y=old_world_y)
+
             del self.data[old_key]
 
             self.layer.add_static(block)
@@ -586,3 +611,34 @@ class BlockMap:
             self.game.grid.clear()
             for obj in self.game.solids:
                 self.game.grid.insert(obj)
+
+
+class UILayer(Layer):
+    def __init__(self, name="UI"):
+        # Parallax 0 is standard for UI
+        super().__init__(name, parallax=0.0)
+        self.elements: List[UIElement] = []
+
+    def add_element(self, element: UIElement):
+        self.elements.append(element)
+        return element
+
+    def process_events(self, event):
+        """Must be called inside the main game loop event pump"""
+        if not self.visible: return
+
+        for el in reversed(self.elements):
+            # Reverse order so top elements get clicks first
+            if el.handle_event(event):
+                break  # Consume event if button clicked
+
+    def update(self, dt):
+        if not self.visible: return
+        for el in self.elements:
+            el.update()
+
+    def render(self, screen: pygame.Surface, camera: Camera = None, emitters=None):
+        if not self.visible: return
+
+        for el in self.elements:
+            el.draw(screen)

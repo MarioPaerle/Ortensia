@@ -668,14 +668,14 @@ class Game:
         self.particle_emitters = []
         self.particle_layer_idx = -1
         self.solids = []
-        self.grid = SpatialGrid(cell_size=200)
+        self.grid = SpatialGrid(cell_size=500)
         self.running = True
         self.max_fps = 600
         self.game_div = 1000.0
         self.scale = 1
         self.layer_type = ChunkedLayer
 
-    def add_create_layer(self, name, parallax=1.0, chunk_size=30, layertype=ChunkedLayer) -> Layer:
+    def add_create_layer(self, name, parallax=1.0, chunk_size=2000, layertype=ChunkedLayer) -> Layer:
         if layertype is None:
             layertype = self.layer_type
         l = layertype(name, parallax, chunk_size=chunk_size)
