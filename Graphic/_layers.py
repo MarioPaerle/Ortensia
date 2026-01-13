@@ -142,6 +142,16 @@ class Layer:
 
         screen.blit(layer_surf, (0, 0))
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if '_cached_surf' in state:
+            del state['_cached_surf']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._cached_surf = None
+
 
 class ChunkedLayer:
     def __init__(self, name: str, parallax: float = 1.0, chunk_size: int = 500):
@@ -287,6 +297,16 @@ class ChunkedLayer:
         else:
             screen.blit(layer_surf, (0, 0))
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if '_cached_surf' in state:
+            del state['_cached_surf']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._cached_surf = None
+
 
 class LightSource:
     _cache = {}
@@ -352,6 +372,16 @@ class LightSource:
             temp_surf = pygame.transform.smoothscale(small, (w, h))
 
         return temp_surf
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if 'surface' in state:
+            del state['surface']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.surface = self._get_surface()
 
 
 class LitLayer(ChunkedLayer):
@@ -611,6 +641,25 @@ class BlockMap:
             self.game.grid.clear()
             for obj in self.game.solids:
                 self.game.grid.insert(obj)
+
+        # In Graphic/_layers.py inside the BlockMap class
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+
+        # 1. Detach from Game Engine (Contains the un-picklable lambda)
+        if 'game' in state:
+            del state['game']
+
+        # 2. Detach from Layer (Contains massive surfaces)
+        if 'layer' in state:
+            del state['layer']
+
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
 
 
 class UILayer(Layer):

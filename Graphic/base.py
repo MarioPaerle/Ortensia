@@ -665,6 +665,8 @@ class Game:
         self.clock = pygame.time.Clock()
         self.main_camera = Camera(width=w, height=h)
         self.layers: List[Layer] = []
+        self.centerx = w//2
+        self.centery = h//2
         self.particle_emitters = []
         self.particle_layer_idx = -1
         self.solids = []
@@ -674,6 +676,9 @@ class Game:
         self.game_div = 1000.0
         self.scale = 1
         self.layer_type = ChunkedLayer
+
+    def c_justified_pos(self, w, h, dx=0, dy=0):
+        return (self.centerx - w//2 + dx,  self.centery - h//2 + dy)
 
     def add_create_layer(self, name, parallax=1.0, chunk_size=2000, layertype=ChunkedLayer) -> Layer:
         if layertype is None:
@@ -710,6 +715,9 @@ class Game:
                     layer.render(self.screen, self.main_camera, emitters=self.particle_emitters)
                 else:
                     layer.render(self.screen, self.main_camera)
+
+                if hasattr(layer, 'process_events'):
+                    layer.process_events(event)
 
             if self.particle_layer_idx == -1:
                 for emitter in self.particle_emitters:

@@ -2,32 +2,44 @@ import pygame
 from typing import List, Any, Optional
 import numpy as np
 import copy
+from Graphic.functions import load_spritesheet
 
 
 class Sprite:
     def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False):
         self.x, self.y, self.width, self.height = x, y, w, h
+        self.color = color
+        self.texture_path = texture  # <--- SAVE THIS PATH
+        self.alpha = alpha
 
-        flags = pygame.SRCALPHA if alpha else 0
-        self.surface = pygame.Surface((w, h), flags)
+        self._load_surface()
 
-        if texture is not None and alpha:
-            self.texture = pygame.image.load(texture).convert_alpha()
-            self.texture = pygame.transform.scale(self.texture, (w, h))
-            self.surface.blit(self.texture, (0, 0))
+    def _load_surface(self):
+        flags = pygame.SRCALPHA if self.alpha else 0
+        self.surface = pygame.Surface((self.width, self.height), flags)
 
-        elif texture is not None and not alpha:
-            self.texture = pygame.image.load(texture).convert()
-            self.texture = pygame.transform.scale(self.texture, (w, h))
+        if self.texture_path:
+            if self.alpha:
+                tex = pygame.image.load(self.texture_path).convert_alpha()
+            else:
+                tex = pygame.image.load(self.texture_path).convert()
 
-            self.surface.blit(self.texture, (0, 0))
+            tex = pygame.transform.scale(tex, (self.width, self.height))
+            self.surface.blit(tex, (0, 0))
         else:
-            self.surface.fill(color)
+            self.surface.fill(self.color)
 
-    def move(self, dx, dy):
-        """Simple movement without collision detection"""
-        self.x += dx
-        self.y += dy
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if 'surface' in state:
+            del state['surface']
+        if 'texture' in state:
+            del state['texture']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._load_surface()
 
 
 class AnimatedSprite(Sprite):
@@ -193,35 +205,75 @@ class SolidSprite(Sprite):
         self.y = self.frect.y - self.coffset_y
 
 
+class AnimationLoader:
+    def __init__(self, file, w, h, row=0, scale=(1, 1)):
+        self.file = file
+        self.w = w
+        self.h = h
+        self.row = row
+        self.scale = scale
+        self.frames = None  # Cache for the surfaces
+
+    def get_frames(self):
+        """Lazy loads the frames when needed."""
+        if self.frames is None:
+            # This runs when we first add the animation OR after unpickling
+            self.frames = load_spritesheet(self.file, self.w, self.h, row=self.row, scale=self.scale)
+        return self.frames
+
+    def __getstate__(self):
+        """When saving, discard the loaded surfaces."""
+        state = self.__dict__.copy()
+        state['frames'] = None  # Force frames to be None in the save file
+        return state
+        # Note: We do NOT define __setstate__ because default behavior is fine.
+        # It loads the dict with frames=None, so get_frames() will reload them automatically.
+
+
 class AnimatedSolidSprite(SolidSprite):
-    """Solid sprite with animations - combines physics with animation"""
+    """Solid sprite with animations - combines physics with animation and supports pickling."""
 
     def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False,
                  cw=None, ch=None, coffset_x=0, coffset_y=0):
 
-        super().__init__(x, y, w, h, color, texture=texture, alpha=alpha,
+        super().__init__(x, y, w, h, color, texture, alpha,
                          cw=cw, ch=ch, coffset_x=coffset_x, coffset_y=coffset_y)
-        self.animations = {}
+
+        # --- NEW: Pickling Support ---
+        self.animations = {}  # The actual Surfaces (Runtime only, NOT SAVED)
+        self.anim_loaders = {}  # The Loaders (Saved to disk)
+
+        # --- ORIGINAL STATE ---
         self.current_state = "idle"
         self.frame_index = 0.0
         self.animation_speed = 10.0
 
-    def add_animation(self, name: str, frames: List[pygame.Surface]):
-        """Register a list of surfaces for a specific state."""
-        self.animations[name] = frames
+    # --- UPDATED: Accepts AnimationLoader now ---
+    def add_animation(self, name: str, loader):
+        """
+        Registers an animation using a loader.
+        The loader is saved; the surfaces are generated immediately for use.
+        """
+        self.anim_loaders[name] = loader
+        self.animations[name] = loader.get_frames()
 
+    # --- ORIGINAL: Your existing logic (kept exactly the same) ---
     def update_animation(self, dt):
         """Advances the frame index based on time."""
         if self.current_state in self.animations:
             self.frame_index += self.animation_speed * dt
 
-            if self.frame_index >= len(self.animations[self.current_state]):
+            frames = self.animations[self.current_state]
+            if self.frame_index >= len(frames):
                 self.frame_index = 0
 
             current_frame = int(self.frame_index)
-            base_frame = self.animations[self.current_state][current_frame]
+            # Safety check in case frame_index drifts or list changes
+            current_frame = current_frame % len(frames)
 
-            if self.show_hitboxes:
+            base_frame = frames[current_frame]
+
+            if hasattr(self, 'show_hitboxes') and self.show_hitboxes:
                 # Create a copy so we don't modify the original animation frame
                 self.surface = base_frame.copy()
                 self.draw_hitbox()
@@ -259,10 +311,57 @@ class AnimatedSolidSprite(SolidSprite):
                     self.frect.top = other.frect.bottom
                     collide = 'u'
 
-        # Update sprite position to match collision box (accounting for offset)
         self.x = self.frect.x - self.coffset_x
         self.y = self.frect.y - self.coffset_y
         return collide
+
+    # --- NEW: Pickling Logic ---
+    def __getstate__(self):
+        # 1. Get state from parent (SolidSprite/Sprite logic)
+        state = super().__getstate__() if hasattr(super(), '__getstate__') else self.__dict__.copy()
+
+        # 2. Remove the list of surfaces (Animation dictionary)
+        # We don't want to save surfaces because they crash pickle
+        if 'animations' in state:
+            del state['animations']
+
+        # 3. Clean up parent surface if it wasn't caught by super()
+        if 'surface' in state:
+            del state['surface']
+
+        return state
+
+    def __setstate__(self, state):
+        # 1. Restore standard data (x, y, anim_loaders, etc.)
+        self.__dict__.update(state)
+
+        # 2. Re-initialize the runtime animation cache
+        self.animations = {}
+
+        # 3. Reload all animations from the saved loaders
+        for name, loader in self.anim_loaders.items():
+            # loader.get_frames() will re-read the files from disk
+            self.animations[name] = loader.get_frames()
+
+        # 4. Restore the visual state of the sprite
+        if self.current_state in self.animations:
+            frames = self.animations[self.current_state]
+            if frames:
+                idx = int(self.frame_index) % len(frames)
+                base_frame = frames[idx]
+
+                # Check for hitbox debugging preference
+                if hasattr(self, 'show_hitboxes') and self.show_hitboxes:
+                    self.surface = base_frame.copy()
+                    self.draw_hitbox()
+                else:
+                    self.surface = base_frame
+            else:
+                # Fallback if animation is empty
+                self.surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        else:
+            # Fallback if state invalid
+            self.surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
 
 
 class Block(SolidSprite):

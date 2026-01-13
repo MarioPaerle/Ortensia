@@ -7,13 +7,17 @@ from Graphic.functions import *
 import random
 
 
+def default_scaler(x):
+    return int(x * 1)
+
+
 class Engine(Game):
     def __init__(
             self,
             name='Ortensia',
             base_size=(1000, 600),
             flag=pygame.SCALED | pygame.RESIZABLE | pygame.HWSURFACE,
-            scaler=lambda x: int(x * 1),
+            scaler=default_scaler,
 
     ):
         self.name = name
@@ -30,6 +34,7 @@ class Engine(Game):
         self.player = None
         self.g = 9.81
         self.lut = create_lut_map("warm")
+        self.map_system = None
 
     def dt(self):
         return self.clock.tick(self.max_fps) / self.game_div
@@ -45,6 +50,10 @@ class Engine(Game):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+
+            for layer in self.layers: # TODO: This can be probably optimized
+                if hasattr(layer, 'process_events'):
+                    layer.process_events(event)
 
         self.mechaniches(dt)
         camera.update()
@@ -64,6 +73,8 @@ class Engine(Game):
             if hasattr(layer, 'update'):
                 layer.update(dt)
 
+
+
         fps = self.clock.get_fps()
         # apply_lut(self.screen, self.lut)
         add_grain(self.screen, 10, dynamic=True)
@@ -73,7 +84,8 @@ class Engine(Game):
 
     def mechaniches(self, dt):
         keys = pygame.key.get_pressed()
-        self.player.mechaniches(keys, dt)
+        if self.player is not None:
+            self.player.mechaniches(keys, dt)
         for emitter in self.particle_emitters:
             emitter.update(dt)
 
@@ -152,10 +164,10 @@ if __name__ == "__main__":
 
 
     def on_reset_click():
-        score_label.set_text("Score: Reset!")
+        game.running = False
 
 
-    score_label = UIText(x=20, y=20, text="Score: 0", size=30, color=(255, 215, 0), shadow=True, font_name='minecraftia')
+    score_label = UIText(x=20, y=20, text="Stop", size=30, color=(255, 215, 0), shadow=True, font_name='minecraftia20')
     ui_layer.add_element(score_label)
     reset_btn = UIButton(x=20, y=60, width=120, height=40, text="Reset Cam",
                          bg_color=(200, 50, 50), on_click=on_reset_click)
@@ -171,6 +183,7 @@ if __name__ == "__main__":
     terrain_layer = game.add_create_layer("Terrain", 1)
 
     map_system = BlockMap(game, fg, tile_size=s(32))
+    game.map_system = map_system
     # fg = game.add_create_layer("Foreground", 1.0)
 
     wall_lamp4 = LightSource(s(250), s(200), radius=s(200), color=(20, 126, 126), falloff=0.99, steps=100)
@@ -192,7 +205,9 @@ if __name__ == "__main__":
     from blocks import *
 
     player = Player(s(400), s(300), s(64), s(64), game=game, cw=16, coffset_x=23, coffset_y=-6)
-    player.add_animation('walk', load_spritesheet("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1)))
+    # player.add_animation('walk', load_spritesheet("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1)))
+    walk_loader = AnimationLoader("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1))
+    player.add_animation('walk', walk_loader)
     player.show_hitboxes = True
     fg.sprites.append(player)
     water = FluidSprite(s(500), s(650), s(600), s(100), color=(50, 100, 255, 120))
@@ -243,5 +258,12 @@ if __name__ == "__main__":
     game.player = player
     game.cameras.append(Camera)
     game.refresh_grid()
+    from Graphic.save_system import WorldState
+
+    world_state = WorldState(game)
+    world_state.load('try1.ort', game)
+
     while game.running:
         game.update()
+
+    world_state.save('try1.ort')
