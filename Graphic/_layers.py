@@ -677,9 +677,8 @@ class UILayer(Layer):
         if not self.visible: return
 
         for el in reversed(self.elements):
-            # Reverse order so top elements get clicks first
             if el.handle_event(event):
-                break  # Consume event if button clicked
+                break
 
     def update(self, dt):
         if not self.visible: return

@@ -654,19 +654,31 @@ class FireflyEmitter(ParticleEmitter):
                 pygame.draw.circle(surface, glow_color, (px, py), current_size * 2)
 
 
-class Game:
+class Root:
     def __init__(self, w=200, h=300, title="Ortensia Engine", flag=pygame.RESIZABLE | pygame.SCALED | pygame.DOUBLEBUF, icon=None):
         self.screen = pygame.display.set_mode((w, h), flag)
+        self.w = w
+        self.h = h
+        self.title = title
+        self.flag = flag
+        self.icon = icon
         pygame.display.set_caption(title)
         if icon is not None:
             icon_surf = pygame.image.load(icon).convert_alpha()
             pygame.display.set_icon(icon_surf)
 
         self.clock = pygame.time.Clock()
-        self.main_camera = Camera(width=w, height=h)
+
+
+class Scene:
+    def __init__(self, root):
+        self.screen = root.screen
+
+        self.clock = pygame.time.Clock()
+        self.main_camera = Camera(width=root.w, height=root.h)
         self.layers: List[Layer] = []
-        self.centerx = w//2
-        self.centery = h//2
+        self.centerx = root.w//2
+        self.centery = root.h//2
         self.particle_emitters = []
         self.particle_layer_idx = -1
         self.solids = []
@@ -728,13 +740,53 @@ class Game:
 
             pygame.display.flip()
 
+    def update(self):
+        dt = self.clock.tick(self.max_fps) / self.game_div
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.running = False
+
+            for layer in self.layers:  # TODO: This can be probably optimized
+                if hasattr(layer, 'process_events'):
+                    layer.process_events(event)
+
+        self.grid.clear()
+        for obj in self.solids:
+            self.grid.insert(obj)
+
+        self.main_camera.update()
+
+        for emitter in self.particle_emitters:
+            emitter.update(dt)
+
+        self.screen.fill((20, 20, 30))
+
+        for i, layer in enumerate(self.layers):
+            if self.particle_layer_idx != -1 and self.particle_layer_idx == i:
+                layer.render(self.screen, self.main_camera, emitters=self.particle_emitters)
+            else:
+                layer.render(self.screen, self.main_camera)
+
+            if hasattr(layer, 'update'):
+                layer.update(dt)
+
+
+        if self.particle_layer_idx == -1:
+            for emitter in self.particle_emitters:
+                emitter.draw(self.screen, self.main_camera)
+
+        fps = self.clock.get_fps()
+        pygame.display.set_caption(f"Ortensia | FPS: {int(fps)}")
+
+
 
 if __name__ == "__main__":
     def s(x):
         return int(x * 1)
 
 
-    game = Game(s(1000), s(600), flag=pygame.SCALED | pygame.RESIZABLE)
+    game = Scene(s(1000), s(600), flag=pygame.SCALED | pygame.RESIZABLE)
     bg2 = game.add_create_layer("Background2", 0.2)
     bg = game.add_create_layer("Background", 0.5)
     particles = game.add_create_layer("particles", 1.0)

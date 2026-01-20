@@ -11,7 +11,46 @@ def default_scaler(x):
     return int(x * 1)
 
 
-class Engine(Game):
+class Game(Root):
+    def __init__(self, w, h, title, flag=pygame.RESIZABLE | pygame.DOUBLEBUF, icon=None):
+        super().__init__(w, h, title=title, flag=flag, icon=icon)
+        if True:
+            gui = UILayer()
+            _scene0 = Scene(self)
+            _scene0.add_layer(gui)
+
+            def close_game():
+                _scene0.running = False
+                exit()
+            def play_game():
+                self.active_scene_name = '1'
+
+            playbutton = UIButton(*_scene0.c_justified_pos(150, 50, dy=100), text='Close Game')
+            playbutton2 = UIButton(*_scene0.c_justified_pos(150, 50, dy=0), text='Singleplayer')
+            playbutton.on_click = close_game
+            playbutton2.on_click = play_game
+            gui.add_element(playbutton)
+            gui.add_element(playbutton2)
+
+        self.loaded_scenes = {'0': _scene0}
+        self.active_scene_name = '0'
+        self.state = 0
+
+    def update(self):
+        self.loaded_scenes[self.active_scene_name].update()
+        pygame.display.flip()
+
+    def addscene(self, scene, name):
+        self.loaded_scenes[name] = scene
+
+    def set_scene(self, name):
+        if name in self.loaded_scenes:
+            self.active_scene_name = name
+        else:
+            flag("Trying to load a non existing scene", level=3)
+
+
+class Engine(Scene):
     def __init__(
             self,
             name='Ortensia',
@@ -27,7 +66,8 @@ class Engine(Game):
         self.w, self.h = base_size[0], base_size[1]
         self.sw, self.sh = scaler(self.w), scaler(self.h)
         self.asset_folder = ''
-        super().__init__(self.sw, self.sh, title=name, flag=flag)
+        root = Root(self.sw, self.sh, title=name, flag=flag)
+        super().__init__(root)
         self.cameras = [self.main_camera]
         self.camera_id = 0
         self.updaters = []
@@ -51,7 +91,7 @@ class Engine(Game):
             if event.type == pygame.QUIT:
                 self.running = False
 
-            for layer in self.layers: # TODO: This can be probably optimized
+            for layer in self.layers:  # TODO: This can be probably optimized
                 if hasattr(layer, 'process_events'):
                     layer.process_events(event)
 
@@ -72,8 +112,6 @@ class Engine(Game):
 
             if hasattr(layer, 'update'):
                 layer.update(dt)
-
-
 
         fps = self.clock.get_fps()
         # apply_lut(self.screen, self.lut)
@@ -260,10 +298,5 @@ if __name__ == "__main__":
     game.refresh_grid()
     from Graphic.save_system import WorldState
 
-    world_state = WorldState(game)
-    world_state.load('try1.ort', game)
-
     while game.running:
         game.update()
-
-    world_state.save('try1.ort')
