@@ -23,7 +23,7 @@ class Game(Root):
                 _scene0.running = False
                 exit()
             def play_game():
-                self.active_scene_name = '1'
+                self.set_scene('1')
 
             playbutton = UIButton(*_scene0.c_justified_pos(150, 50, dy=100), text='Close Game')
             playbutton2 = UIButton(*_scene0.c_justified_pos(150, 50, dy=0), text='Singleplayer')
@@ -48,6 +48,7 @@ class Game(Root):
     def set_scene(self, name):
         if name in self.loaded_scenes:
             self.active_scene_name = name
+            self.loaded_scenes[name].clock.tick()
         else:
             flag("Trying to load a non existing scene", level=3)
 
@@ -140,8 +141,14 @@ class Player(AnimatedSolidSprite):
         self.on_floor = False
         self.inventory = {}
 
-    def physics(self, dt, dx, dy):
-        self.vy += 9.81 * dt
+        self.SPEED_X = 200
+        self.JUMP_FORCE = 240
+        self.GRAVITY = 500
+
+
+    def physics(self, dt, dx):
+        self.vy += self.GRAVITY * dt
+        dy = self.vy * dt
 
         collide = self.move(dx, dy, self.game.grid)
 
@@ -149,28 +156,38 @@ class Player(AnimatedSolidSprite):
         if collide == 'b':
             self.vy = 0
             self.on_floor = True
+        elif collide == 'u':
+            self.vy = 0
 
     def mechaniches(self, keys, dt):
-        speed = 60 * dt
-        dx, dy = self.vx, self.vy
+        current_vx = 0
 
-        if keys[pygame.K_LEFT]:  dx -= speed
-        if keys[pygame.K_RIGHT]: dx += speed
+        if keys[pygame.K_LEFT]:  current_vx -= self.SPEED_X
+        if keys[pygame.K_RIGHT]: current_vx += self.SPEED_X
+
         if keys[pygame.K_UP] and self.on_floor:
-            self.vy = - 4
-        if keys[pygame.K_DOWN]:  dy += speed
+            self.vy = -self.JUMP_FORCE
+
         if keys[pygame.K_q]:  game.main_camera.apply_zoom(0.5 * dt)
         if keys[pygame.K_e]:  game.main_camera.apply_zoom(-0.5 * dt)
-        self.physics(dt, dx, dy)
 
-        if dx != 0 or dy != 0:
+        if keys[pygame.K_SPACE] and not self.added:
+            self.added = True
+            self.game.main_camera.shake_intensity = 1
+            fg.add_light(wall_lamp4)
+
+        dx = current_vx * dt
+
+        # Esegui la fisica
+        self.physics(dt, dx)
+
+        if dx != 0:
             self.set_state("walk")
         else:
             self.set_state("idle")
 
         self.update_animation(dt)
         # water.update(interactors=[self])
-
         mouse_buttons = pygame.mouse.get_pressed()
         mx, my = pygame.mouse.get_pos()
         """if mouse_buttons[0]:
