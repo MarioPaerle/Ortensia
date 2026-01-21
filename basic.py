@@ -38,6 +38,8 @@ class Game(Root):
 
     def update(self):
         self.loaded_scenes[self.active_scene_name].update()
+        if not self.loaded_scenes[self.active_scene_name].running:
+            exit()
         pygame.display.flip()
 
     def addscene(self, scene, name):
@@ -148,8 +150,6 @@ class Player(AnimatedSolidSprite):
             self.vy = 0
             self.on_floor = True
 
-        map_system.update(dt)
-
     def mechaniches(self, keys, dt):
         speed = 60 * dt
         dx, dy = self.vx, self.vy
@@ -161,11 +161,6 @@ class Player(AnimatedSolidSprite):
         if keys[pygame.K_DOWN]:  dy += speed
         if keys[pygame.K_q]:  game.main_camera.apply_zoom(0.5 * dt)
         if keys[pygame.K_e]:  game.main_camera.apply_zoom(-0.5 * dt)
-        if keys[pygame.K_SPACE] and not self.added:
-            self.added = True
-            self.game.main_camera.shake_intensity = 1
-            fg.add_light(wall_lamp4)
-        wall_lamp4.x, wall_lamp4.y = self.x, self.y
         self.physics(dt, dx, dy)
 
         if dx != 0 or dy != 0:
@@ -178,15 +173,27 @@ class Player(AnimatedSolidSprite):
 
         mouse_buttons = pygame.mouse.get_pressed()
         mx, my = pygame.mouse.get_pos()
-        if mouse_buttons[0]:
+        """if mouse_buttons[0]:
             block = random.choice(list(RAPIDBLOCKS.values()))
             map_system.place_tile(mx, my, block=block)
             game.refresh_grid()
 
         if mouse_buttons[2]:
             map_system.remove_tile(mx, my)
-            game.refresh_grid()
+            game.refresh_grid()"""
 
+
+class WorldLevel(Scene):
+    def __init__(self, root, map_system=None):
+        super().__init__(root)
+        self.map_system = map_system
+
+    def set_map(self, map_system):
+        if self.map_system is not None:
+            flag("map system already present, overwritten", level=2)
+        self.map_system = map_system
+
+        
 
 if __name__ == "__main__":
     game = Engine(name='Ortensia', base_size=(1000, 600), flag=pygame.SCALED | pygame.RESIZABLE)

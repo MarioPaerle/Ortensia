@@ -3,7 +3,6 @@ import numpy as np
 import math
 import datetime
 
-
 PARTICLE_EMISSION_QUALITY = 1
 EFFECTS_QUALITY = 4
 
@@ -486,7 +485,6 @@ class PostProcessing:
         fog_layer = PostProcessing._fog_noise
         fog_layer.set_alpha(int(255 * density))
 
-
         surface.blit(fog_layer, (offset_x1 - w, 0))
         surface.blit(fog_layer, (offset_x1, 0))
 
@@ -598,15 +596,15 @@ class ParticleEmitter:
         indices = np.where(self.active)[0]
         screen_w, screen_h = surface.get_size()
         for i in indices:
-            px = int(self.data[i, 0] - camera.x)*parallax
-            py = int(self.data[i, 1] - camera.y)*parallax
+            px = int(self.data[i, 0] - camera.x) * parallax
+            py = int(self.data[i, 1] - camera.y) * parallax
             size = max(1, int(self.data[i, 4] * 5))
 
             radius = max(1, int(size * self.size))
             if -radius <= px <= screen_w + radius and -radius <= py <= screen_h + radius:
                 color = self.color if self.color != 'random' else (
                     random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-                pygame.draw.circle(surface, color, (px*parallax, py*parallax), radius)
+                pygame.draw.circle(surface, color, (px * parallax, py * parallax), radius)
 
 
 class FireflyEmitter(ParticleEmitter):
@@ -634,8 +632,8 @@ class FireflyEmitter(ParticleEmitter):
         screen_w, screen_h = surface.get_size()
 
         for i in indices:
-            px = int(self.data[i, 0] - camera.x)*parallax
-            py = int(self.data[i, 1] - camera.y)*parallax
+            px = int(self.data[i, 0] - camera.x) * parallax
+            py = int(self.data[i, 1] - camera.y) * parallax
 
             timer = self.firefly_data[i, 0]
             pulse = (math.sin(timer * 2.0 + self.firefly_data[i, 3]) + 1) / 2
@@ -643,7 +641,7 @@ class FireflyEmitter(ParticleEmitter):
             current_size = max(1, int(self.size * (1 + pulse / 4)))
 
             color = self.color
-            radius = current_size*parallax
+            radius = current_size * parallax
             if -radius <= px <= screen_w + radius and -radius <= py <= screen_h + radius:
                 color = self.color if self.color != 'random' else (
                     random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
@@ -655,7 +653,8 @@ class FireflyEmitter(ParticleEmitter):
 
 
 class Root:
-    def __init__(self, w=200, h=300, title="Ortensia Engine", flag=pygame.RESIZABLE | pygame.SCALED | pygame.DOUBLEBUF, icon=None):
+    def __init__(self, w=200, h=300, title="Ortensia Engine", flag=pygame.RESIZABLE | pygame.SCALED | pygame.DOUBLEBUF,
+                 icon=None):
         self.screen = pygame.display.set_mode((w, h), flag)
         self.w = w
         self.h = h
@@ -677,8 +676,8 @@ class Scene:
         self.clock = pygame.time.Clock()
         self.main_camera = Camera(width=root.w, height=root.h)
         self.layers: List[Layer] = []
-        self.centerx = root.w//2
-        self.centery = root.h//2
+        self.centerx = root.w // 2
+        self.centery = root.h // 2
         self.particle_emitters = []
         self.particle_layer_idx = -1
         self.solids = []
@@ -688,9 +687,17 @@ class Scene:
         self.game_div = 1000.0
         self.scale = 1
         self.layer_type = ChunkedLayer
+        self.updatables = []
+        self.mechaniques = []
+
+        # Simulated 3D
+        self.anaglyph_mode = False
+        self.stereo_separation = 6.0  # Distanza tra gli "occhi" (in pixel)
+        self._left_buffer = None
+        self._right_buffer = None
 
     def c_justified_pos(self, w, h, dx=0, dy=0):
-        return (self.centerx - w//2 + dx,  self.centery - h//2 + dy)
+        return (self.centerx - w // 2 + dx, self.centery - h // 2 + dy)
 
     def add_create_layer(self, name, parallax=1.0, chunk_size=2000, layertype=ChunkedLayer) -> Layer:
         if layertype is None:
@@ -701,6 +708,49 @@ class Scene:
 
     def add_layer(self, l):
         self.layers.append(l)
+
+    def _render_anaglyph(self, render_target, layers_to_draw, emitters):
+        w, h = render_target.get_size()
+
+        if self._left_buffer is None or self._left_buffer.get_size() != (w, h):
+            self._left_buffer = pygame.Surface((w, h))
+            self._right_buffer = pygame.Surface((w, h))
+
+        original_cam_x = self.main_camera.x
+
+        self.main_camera.x = original_cam_x - (self.stereo_separation / 2)
+
+        self._left_buffer.fill((20, 20, 30))
+        for i, layer in enumerate(layers_to_draw):
+            if self.particle_layer_idx != -1 and self.particle_layer_idx == i:
+                layer.render(self._left_buffer, self.main_camera, emitters=emitters)
+            else:
+                layer.render(self._left_buffer, self.main_camera)
+
+        if self.particle_layer_idx == -1:
+            for emitter in emitters:
+                emitter.draw(self._left_buffer, self.main_camera)
+
+        self._left_buffer.fill((255, 0, 0), special_flags=pygame.BLEND_MULT)
+        self.main_camera.x = original_cam_x + (self.stereo_separation / 2)
+
+        self._right_buffer.fill((20, 20, 30))
+        for i, layer in enumerate(layers_to_draw):
+            if self.particle_layer_idx != -1 and self.particle_layer_idx == i:
+                layer.render(self._right_buffer, self.main_camera, emitters=emitters)
+            else:
+                layer.render(self._right_buffer, self.main_camera)
+
+        if self.particle_layer_idx == -1:
+            for emitter in emitters:
+                emitter.draw(self._right_buffer, self.main_camera)
+
+        self._right_buffer.fill((0, 255, 255), special_flags=pygame.BLEND_MULT)
+
+        render_target.blit(self._left_buffer, (0, 0))
+        render_target.blit(self._right_buffer, (0, 0), special_flags=pygame.BLEND_ADD)
+
+        self.main_camera.x = original_cam_x
 
     def run(self, update_callback):
         while self.running:
@@ -742,10 +792,14 @@ class Scene:
 
     def update(self):
         dt = self.clock.tick(self.max_fps) / self.game_div
-
-        for event in pygame.event.get():
+        events = pygame.event.get()
+        for event in events:
             if event.type == pygame.QUIT:
                 self.running = False
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_3:
+                self.anaglyph_mode = not self.anaglyph_mode
+                flag("Activated Anaglyph 3d mode")
 
             for layer in self.layers:  # TODO: This can be probably optimized
                 if hasattr(layer, 'process_events'):
@@ -756,21 +810,25 @@ class Scene:
             self.grid.insert(obj)
 
         self.main_camera.update()
+        for updt in self.mechaniques:
+            updt.mechaniches(pygame.key.get_pressed(), dt)
 
         for emitter in self.particle_emitters:
             emitter.update(dt)
 
-        self.screen.fill((20, 20, 30))
+        if self.anaglyph_mode:
+            self._render_anaglyph(self.screen, self.layers, self.particle_emitters)
+        else:
+            self.screen.fill((20, 20, 30))
 
-        for i, layer in enumerate(self.layers):
-            if self.particle_layer_idx != -1 and self.particle_layer_idx == i:
-                layer.render(self.screen, self.main_camera, emitters=self.particle_emitters)
-            else:
-                layer.render(self.screen, self.main_camera)
+            for i, layer in enumerate(self.layers):
+                if self.particle_layer_idx != -1 and self.particle_layer_idx == i:
+                    layer.render(self.screen, self.main_camera, emitters=self.particle_emitters)
+                else:
+                    layer.render(self.screen, self.main_camera)
 
-            if hasattr(layer, 'update'):
-                layer.update(dt)
-
+                if hasattr(layer, 'update'):
+                    layer.update(dt)
 
         if self.particle_layer_idx == -1:
             for emitter in self.particle_emitters:
@@ -778,7 +836,6 @@ class Scene:
 
         fps = self.clock.get_fps()
         pygame.display.set_caption(f"Ortensia | FPS: {int(fps)}")
-
 
 
 if __name__ == "__main__":
@@ -851,6 +908,7 @@ if __name__ == "__main__":
 
         screen.blit(cursor_surf, (rect_x, rect_y))
 
+
     def my_update(game_inst, dt):
         keys = pygame.key.get_pressed()
         speed = 900 * dt * 0.5
@@ -879,5 +937,6 @@ if __name__ == "__main__":
             map_system.remove_tile(mx, my)
 
         # draw_builder_cursor(game_inst.screen, map_system, game_inst.main_camera)
+
 
     game.run(my_update)
