@@ -40,7 +40,7 @@ class WorldState:
 
         # --- RESTORE MAP ---
         game_engine.map_system = world.map_data
-        game_engine.map_system.game = game_engine  # Reattach engine
+        game_engine.map_system.level = game_engine  # Reattach engine
 
         # Re-link Map to the correct Layer (assuming 'Foreground')
         for layer in game_engine.layers:

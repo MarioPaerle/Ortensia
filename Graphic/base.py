@@ -812,6 +812,9 @@ class Scene:
         self.main_camera.update()
         for updt in self.mechaniques:
             updt.mechaniches(pygame.key.get_pressed(), dt)
+        for updt in self.updatables:
+            updt.update(dt)
+
 
         for emitter in self.particle_emitters:
             emitter.update(dt)

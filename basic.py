@@ -6,7 +6,6 @@ from Graphic.base import *
 from Graphic.functions import *
 import random
 
-
 def default_scaler(x):
     return int(x * 1)
 
@@ -132,25 +131,28 @@ class Engine(Scene):
 
 
 class Player(AnimatedSolidSprite):
-    def __init__(self, x, y, w, h, game, cw=None, ch=None, coffset_x=0, coffset_y=0):
+    def __init__(self, x, y, w, h, level, cw=None, ch=None, coffset_x=0, coffset_y=0):
         super().__init__(x, y, w, h, cw=cw, ch=ch, coffset_x=coffset_x, coffset_y=coffset_y)
-        self.game = game
+        self.level = level
         self.vx = 0
         self.vy = 0
         self.added = False
         self.on_floor = False
         self.inventory = {}
+        self.slotbar = [
+            level.registered_blocks['deepslate.png']
+        ]
+        self.slotbar_index = 0
 
         self.SPEED_X = 200
         self.JUMP_FORCE = 240
         self.GRAVITY = 500
 
-
     def physics(self, dt, dx):
         self.vy += self.GRAVITY * dt
         dy = self.vy * dt
 
-        collide = self.move(dx, dy, self.game.grid)
+        collide = self.move(dx, dy, self.level.grid)
 
         self.on_floor = False
         if collide == 'b':
@@ -173,7 +175,7 @@ class Player(AnimatedSolidSprite):
 
         if keys[pygame.K_SPACE] and not self.added:
             self.added = True
-            self.game.main_camera.shake_intensity = 1
+            self.level.main_camera.shake_intensity = 1
             fg.add_light(wall_lamp4)
 
         dx = current_vx * dt
@@ -187,28 +189,43 @@ class Player(AnimatedSolidSprite):
             self.set_state("idle")
 
         self.update_animation(dt)
-        # water.update(interactors=[self])
-        mouse_buttons = pygame.mouse.get_pressed()
-        mx, my = pygame.mouse.get_pos()
-        """if mouse_buttons[0]:
-            block = random.choice(list(RAPIDBLOCKS.values()))
-            map_system.place_tile(mx, my, block=block)
-            game.refresh_grid()
+        if hasattr(self.level, "map_system"):
+            ms = self.level.map_system
+            mouse_buttons = pygame.mouse.get_pressed()
+            mx, my = pygame.mouse.get_pos()
+            if mouse_buttons[0]:
+                block = self.slotbar[self.slotbar_index]
+                ms.place_tile(mx, my, block=block)
+                self.level.refresh_grid()
 
-        if mouse_buttons[2]:
-            map_system.remove_tile(mx, my)
-            game.refresh_grid()"""
+            if mouse_buttons[2]:
+                ms.remove_tile(mx, my)
+                self.level.refresh_grid()
 
 
 class WorldLevel(Scene):
     def __init__(self, root, map_system=None):
         super().__init__(root)
         self.map_system = map_system
+        self.registered_blocks = {}
 
     def set_map(self, map_system):
         if self.map_system is not None:
             flag("map system already present, overwritten", level=2)
         self.map_system = map_system
+        self.updatables.append(self.map_system)
+
+    def add_player(self, player):
+        self.player = player
+        self.solids.append(player)
+        self.main_camera.target = player
+        self.mechaniques.append(player)
+
+    def refresh_grid(self):
+        self.grid.clear()
+        for obj in self.solids:
+            self.grid.insert(obj)
+
 
         
 
@@ -266,7 +283,7 @@ if __name__ == "__main__":
     # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
     from blocks import *
 
-    player = Player(s(400), s(300), s(64), s(64), game=game, cw=16, coffset_x=23, coffset_y=-6)
+    player = Player(s(400), s(300), s(64), s(64), level=game, cw=16, coffset_x=23, coffset_y=-6)
     # player.add_animation('walk', load_spritesheet("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1)))
     walk_loader = AnimationLoader("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1))
     player.add_animation('walk', walk_loader)

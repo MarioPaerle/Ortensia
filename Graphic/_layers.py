@@ -540,8 +540,8 @@ class TileMap:
 
 
 class BlockMap:
-    def __init__(self, game, layer: LitLayer, tile_size=40, texture=None):
-        self.game = game
+    def __init__(self, level, layer: LitLayer, tile_size=40, texture=None):
+        self.level = level
         self.layer = layer
         self.tile_size = tile_size
         self.texture = texture
@@ -550,8 +550,8 @@ class BlockMap:
         self.lights = {}
 
     def get_grid_pos(self, screen_x, screen_y):
-        cam_x = self.game.main_camera.x * self.layer.parallax
-        cam_y = self.game.main_camera.y * self.layer.parallax
+        cam_x = self.level.main_camera.x * self.layer.parallax
+        cam_y = self.level.main_camera.y * self.layer.parallax
 
         world_x = screen_x + cam_x
         world_y = screen_y + cam_y
@@ -576,7 +576,28 @@ class BlockMap:
             flag("Light Emitting Blocks do not support Physic as for now", level=2)
 
         self.layer.add_static(tile_sprite)
-        self.game.solids.append(tile_sprite)
+        self.level.solids.append(tile_sprite)
+        self.data[(gx, gy)] = tile_sprite
+
+        if tile_sprite.physics_block:
+            self.physics_blocks.append(tile_sprite)
+
+    def set_tile(self, gx, gy, block: Block):
+        if (gx, gy) in self.data:
+            return
+
+        world_x = gx * self.tile_size
+        world_y = gy * self.tile_size
+
+        tile_sprite = block.place(world_x, world_y)
+        if block.light_emission_intensity > 0 and isinstance(self.layer, LitLayer) and not block.physics_block:
+            self.lights[(gx, gy)] = self.layer.add_light(
+                LightSource(world_x, world_x, radius=200, color=block.light_emission_color, falloff=0.99, steps=200))
+        if block.light_emission_intensity > 0 and isinstance(self.layer, LitLayer) and block.physics_block:
+            flag("Light Emitting Blocks do not support Physic as for now", level=2)
+
+        self.layer.add_static(tile_sprite)
+        self.level.solids.append(tile_sprite)
         self.data[(gx, gy)] = tile_sprite
 
         if tile_sprite.physics_block:
@@ -584,13 +605,12 @@ class BlockMap:
 
     def remove_tile(self, screen_x, screen_y):
         gx, gy = self.get_grid_pos(screen_x, screen_y - 10)
-        print(gx, gy, self.data, self.layer.sprites)
         if (gx, gy) in self.data:
             sprite = self.data[(gx, gy)]
 
             self.layer.remove_static(sprite)
-            if sprite in self.game.solids:
-                self.game.solids.remove(sprite)
+            if sprite in self.level.solids:
+                self.level.solids.remove(sprite)
             if sprite in self.physics_blocks:
                 self.physics_blocks.remove(sprite)
 
@@ -606,16 +626,13 @@ class BlockMap:
         blocks_to_reassign = []
 
         for block in self.physics_blocks:
-            # Physics updates the X/Y of the block object immediately
-            moved = block.update_physics(dt, self.game.grid)
+            moved = block.update_physics(dt, self.level.grid)
 
             if moved and block.is_grounded:
                 new_gx = int(block.x // self.tile_size)
                 new_gy = int(block.y // self.tile_size)
 
                 old_key = None
-                # Optimization Note: This loop is O(N) and can be slow if map is huge.
-                # Consider storing grid_pos on the block itself later.
                 for key, sprite in self.data.items():
                     if sprite is block:
                         old_key = key
@@ -625,12 +642,10 @@ class BlockMap:
                     blocks_to_reassign.append((block, old_key, (new_gx, new_gy)))
 
         for block, old_key, new_key in blocks_to_reassign:
-            # CALCULATE OLD WORLD POSITION
-            # We assume the block was roughly at the top-left of the old grid cell
+
             old_world_x = old_key[0] * self.tile_size
             old_world_y = old_key[1] * self.tile_size
 
-            # Pass the OLD coordinates to ensure we look in the correct Chunk list
             self.layer.remove_static(block, x=old_world_x, y=old_world_y)
 
             del self.data[old_key]
@@ -638,20 +653,17 @@ class BlockMap:
             self.layer.add_static(block)
             self.data[new_key] = block
 
-            self.game.grid.clear()
-            for obj in self.game.solids:
-                self.game.grid.insert(obj)
+            self.level.grid.clear()
+            for obj in self.level.solids:
+                self.level.grid.insert(obj)
 
-        # In Graphic/_layers.py inside the BlockMap class
 
     def __getstate__(self):
         state = self.__dict__.copy()
 
-        # 1. Detach from Game Engine (Contains the un-picklable lambda)
         if 'game' in state:
             del state['game']
 
-        # 2. Detach from Layer (Contains massive surfaces)
         if 'layer' in state:
             del state['layer']
 

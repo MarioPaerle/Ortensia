@@ -37,7 +37,7 @@ light_block.max_fall_speed = 400
 map_system = BlockMap(game, terrain_layer, tile_size=s(32))
 
 # Create player
-player = Player(s(400), s(300), s(64), s(64), game=game, cw=48)
+player = Player(s(400), s(300), s(64), s(64), level=game, cw=48)
 player.add_animation('walk', load_spritesheet("Graphic/examples/AuryRunning.png", 64, 64, row=0))
 fg.sprites.append(player)
 game.solids.append(player)

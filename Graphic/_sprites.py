@@ -9,7 +9,7 @@ class Sprite:
     def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False):
         self.x, self.y, self.width, self.height = x, y, w, h
         self.color = color
-        self.texture_path = texture  # <--- SAVE THIS PATH
+        self.texture_path = texture
         self.alpha = alpha
 
         self._load_surface()
@@ -137,18 +137,14 @@ class SolidSprite(Sprite):
                  cw=None, ch=None, coffset_x=0, coffset_y=0):
         super().__init__(x, y, w, h, color, texture=texture, alpha=alpha)
 
-        # Collision box dimensions
         self.cw = w if cw is None else cw
         self.ch = h if ch is None else ch
 
-        # Collision box offset from sprite position
         self.coffset_x = coffset_x
         self.coffset_y = coffset_y
 
-        # Create collision rect with offset
         self.frect = pygame.FRect(x + coffset_x, y + coffset_y, self.cw, self.ch)
 
-        # Visual hitbox settings
         self.show_hitboxes = False
         self.hitbox_color = (255, 255, 255)
         self.hitbox_width = 2
@@ -177,7 +173,6 @@ class SolidSprite(Sprite):
 
         target = surface if surface is not None else self.surface
 
-        # Calculate hitbox position relative to sprite surface
         hitbox_rect = pygame.Rect(
             self.coffset_x,
             self.coffset_y,
@@ -200,7 +195,6 @@ class SolidSprite(Sprite):
                 if dy > 0: self.frect.bottom = other.frect.top
                 if dy < 0: self.frect.top = other.frect.bottom
 
-        # Update sprite position to match collision box (accounting for offset)
         self.x = self.frect.x - self.coffset_x
         self.y = self.frect.y - self.coffset_y
 
@@ -212,22 +206,17 @@ class AnimationLoader:
         self.h = h
         self.row = row
         self.scale = scale
-        self.frames = None  # Cache for the surfaces
+        self.frames = None
 
     def get_frames(self):
-        """Lazy loads the frames when needed."""
         if self.frames is None:
-            # This runs when we first add the animation OR after unpickling
             self.frames = load_spritesheet(self.file, self.w, self.h, row=self.row, scale=self.scale)
         return self.frames
 
     def __getstate__(self):
-        """When saving, discard the loaded surfaces."""
         state = self.__dict__.copy()
-        state['frames'] = None  # Force frames to be None in the save file
+        state['frames'] = None
         return state
-        # Note: We do NOT define __setstate__ because default behavior is fine.
-        # It loads the dict with frames=None, so get_frames() will reload them automatically.
 
 
 class AnimatedSolidSprite(SolidSprite):
@@ -239,16 +228,14 @@ class AnimatedSolidSprite(SolidSprite):
         super().__init__(x, y, w, h, color, texture, alpha,
                          cw=cw, ch=ch, coffset_x=coffset_x, coffset_y=coffset_y)
 
-        # --- NEW: Pickling Support ---
-        self.animations = {}  # The actual Surfaces (Runtime only, NOT SAVED)
-        self.anim_loaders = {}  # The Loaders (Saved to disk)
+        self.animations = {}
+        self.anim_loaders = {}
 
         # --- ORIGINAL STATE ---
         self.current_state = "idle"
         self.frame_index = 0.0
         self.animation_speed = 10.0
 
-    # --- UPDATED: Accepts AnimationLoader now ---
     def add_animation(self, name: str, loader):
         """
         Registers an animation using a loader.
@@ -257,7 +244,6 @@ class AnimatedSolidSprite(SolidSprite):
         self.anim_loaders[name] = loader
         self.animations[name] = loader.get_frames()
 
-    # --- ORIGINAL: Your existing logic (kept exactly the same) ---
     def update_animation(self, dt):
         """Advances the frame index based on time."""
         if self.current_state in self.animations:
@@ -268,13 +254,11 @@ class AnimatedSolidSprite(SolidSprite):
                 self.frame_index = 0
 
             current_frame = int(self.frame_index)
-            # Safety check in case frame_index drifts or list changes
             current_frame = current_frame % len(frames)
 
             base_frame = frames[current_frame]
 
             if hasattr(self, 'show_hitboxes') and self.show_hitboxes:
-                # Create a copy so we don't modify the original animation frame
                 self.surface = base_frame.copy()
                 self.draw_hitbox()
             else:
@@ -288,7 +272,6 @@ class AnimatedSolidSprite(SolidSprite):
 
     def move(self, dx, dy, grid):
         """Movement with collision detection (inherited from SolidSprite)"""
-        # Store collision info
         collide = 'none'
 
         self.frect.x += dx
@@ -315,52 +298,38 @@ class AnimatedSolidSprite(SolidSprite):
         self.y = self.frect.y - self.coffset_y
         return collide
 
-    # --- NEW: Pickling Logic ---
     def __getstate__(self):
-        # 1. Get state from parent (SolidSprite/Sprite logic)
         state = super().__getstate__() if hasattr(super(), '__getstate__') else self.__dict__.copy()
-
-        # 2. Remove the list of surfaces (Animation dictionary)
-        # We don't want to save surfaces because they crash pickle
         if 'animations' in state:
             del state['animations']
 
-        # 3. Clean up parent surface if it wasn't caught by super()
         if 'surface' in state:
             del state['surface']
 
         return state
 
     def __setstate__(self, state):
-        # 1. Restore standard data (x, y, anim_loaders, etc.)
         self.__dict__.update(state)
 
-        # 2. Re-initialize the runtime animation cache
         self.animations = {}
 
-        # 3. Reload all animations from the saved loaders
         for name, loader in self.anim_loaders.items():
-            # loader.get_frames() will re-read the files from disk
             self.animations[name] = loader.get_frames()
 
-        # 4. Restore the visual state of the sprite
         if self.current_state in self.animations:
             frames = self.animations[self.current_state]
             if frames:
                 idx = int(self.frame_index) % len(frames)
                 base_frame = frames[idx]
 
-                # Check for hitbox debugging preference
                 if hasattr(self, 'show_hitboxes') and self.show_hitboxes:
                     self.surface = base_frame.copy()
                     self.draw_hitbox()
                 else:
                     self.surface = base_frame
             else:
-                # Fallback if animation is empty
                 self.surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         else:
-            # Fallback if state invalid
             self.surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
 
 
