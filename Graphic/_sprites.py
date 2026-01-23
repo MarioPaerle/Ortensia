@@ -298,6 +298,17 @@ class AnimatedSolidSprite(SolidSprite):
         self.y = self.frect.y - self.coffset_y
         return collide
 
+    def setpos(self, x, y):
+        """Movement with collision detection (inherited from SolidSprite)"""
+        collide = 'none'
+
+        self.frect.x = x + self.coffset_x
+        self.frect.y = y + self.coffset_y
+
+        self.x = x
+        self.y = y
+        return collide
+
     def __getstate__(self):
         state = super().__getstate__() if hasattr(super(), '__getstate__') else self.__dict__.copy()
         if 'animations' in state:

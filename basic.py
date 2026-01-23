@@ -6,6 +6,7 @@ from Graphic.base import *
 from Graphic.functions import *
 import random
 
+
 def default_scaler(x):
     return int(x * 1)
 
@@ -21,6 +22,7 @@ class Game(Root):
             def close_game():
                 _scene0.running = False
                 exit()
+
             def play_game():
                 self.set_scene('1')
 
@@ -202,32 +204,59 @@ class Player(AnimatedSolidSprite):
                 ms.remove_tile(mx, my)
                 self.level.refresh_grid()
 
+    def save(self, path=''):
+        f = {
+            'x': self.x,
+            'y': self.y,
+            'slotbar': [s.id for s in self.slotbar]
+        }
+        with open(path + '-player.json', 'w') as file:
+            file.write(json.dumps(f))
+
+    def load(self, level, path=''):
+        with open(path + '-player.json') as file:
+            datas = file.read()
+        datas = json.loads(datas)
+        x = datas['x']
+        y = datas['y']
+        self.setpos(x, y)
+        self.slotbar = [level.registered_blocks[d] for d in datas['slotbar']]
+
 
 class WorldLevel(Scene):
     def __init__(self, root, map_system=None):
         super().__init__(root)
         self.map_system = map_system
         self.registered_blocks = {}
+        self.savable_objects = []
 
     def set_map(self, map_system):
         if self.map_system is not None:
             flag("map system already present, overwritten", level=2)
         self.map_system = map_system
         self.updatables.append(self.map_system)
+        self.savable_objects.append(self.map_system)
 
     def add_player(self, player):
         self.player = player
         self.solids.append(player)
         self.main_camera.target = player
         self.mechaniques.append(player)
+        self.savable_objects.append(self.player)
 
     def refresh_grid(self):
         self.grid.clear()
         for obj in self.solids:
             self.grid.insert(obj)
 
+    def save(self, path='saves/'):
+        for savable in self.savable_objects:
+            savable.save(path=path)
 
-        
+    def load(self, path):
+        for savable in self.savable_objects:
+            savable.load(self, path=path)
+
 
 if __name__ == "__main__":
     game = Engine(name='Ortensia', base_size=(1000, 600), flag=pygame.SCALED | pygame.RESIZABLE)

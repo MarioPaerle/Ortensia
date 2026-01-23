@@ -6,6 +6,7 @@ from Graphic.functions import scale_color
 import math
 from Graphic.functions import flag
 from Graphic.gui import *
+import json
 
 
 @dataclass
@@ -619,6 +620,21 @@ class BlockMap:
             self.layer.lights.remove(self.lights[(gx, gy)])
             del self.lights[(gx, gy)]
 
+    def del_tile(self, gx, gy):
+        if (gx, gy) in self.data:
+            sprite = self.data[(gx, gy)]
+
+            self.layer.remove_static(sprite)
+            if sprite in self.level.solids:
+                self.level.solids.remove(sprite)
+            if sprite in self.physics_blocks:
+                self.physics_blocks.remove(sprite)
+
+            del self.data[(gx, gy)]
+        if (gx, gy) in self.lights:
+            self.layer.lights.remove(self.lights[(gx, gy)])
+            del self.lights[(gx, gy)]
+
     def update(self, dt):
         if not self.physics_blocks:
             return
@@ -657,7 +673,6 @@ class BlockMap:
             for obj in self.level.solids:
                 self.level.grid.insert(obj)
 
-
     def __getstate__(self):
         state = self.__dict__.copy()
 
@@ -672,6 +687,34 @@ class BlockMap:
     def __setstate__(self, state):
         self.__dict__.update(state)
 
+    def save(self, path=''):
+        f = json.dumps({str(s): self.data[s].id for s in self.data})
+        with open(path + '-blockmap.json', 'w') as file:
+            file.write(f)
+
+        flag("Saved BlockMap")
+
+    def load(self, level, path=''):
+        self.reset(level)
+        with open(path + '-blockmap.json') as file:
+            datas = file.read()
+        datas = json.loads(datas)
+        for block in datas:
+            self.set_tile(*eval(block), level.registered_blocks[datas[block]])
+
+    def loadstruct(self, level, path=''):
+        with open(path + '-blockmap.json') as file:
+            datas = file.read()
+        datas = json.loads(datas)
+        for block in datas:
+            self.set_tile(*eval(block), level.registered_blocks[datas[block]])
+
+    def reset(self, level):
+        for tile in list(self.data.keys()):
+            self.del_tile(*tile)
+        self.data = {}
+        self.physics_blocks = []
+        self.lights = {}
 
 
 class UILayer(Layer):
