@@ -163,3 +163,34 @@ class UIButton(UIElement):
                 self.render_button()
 
         return False
+
+
+class UITextInput(UIElement):
+    def __init__(self, x, y, width=200, height=40, font_name='minecraftia20', initial_text="new_world"):
+        super().__init__(x, y, width, height)
+        self.text = initial_text
+        self.active = False
+        self.color_active = (255, 255, 255)
+        self.color_inactive = (150, 150, 150)
+        self.font = pygame.font.Font(None, 32)
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            self.active = self.rect.collidepoint(event.pos)
+            return self.active
+
+        if self.active and event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_BACKSPACE:
+                self.text = self.text[:-1]
+            elif event.key == pygame.K_RETURN:
+                self.active = False
+            else:
+                self.text += event.unicode
+            return True
+        return False
+
+    def draw(self, screen):
+        color = self.color_active if self.active else self.color_inactive
+        pygame.draw.rect(screen, color, self.rect, 2)
+        text_surf = self.font.render(self.text, True, (255, 255, 255))
+        screen.blit(text_surf, (self.x + 5, self.y + 10))

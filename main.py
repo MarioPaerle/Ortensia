@@ -7,6 +7,7 @@ from blocks import *
 level = WorldLevel(game)
 level.registered_blocks = RAPIDBLOCKS
 game.addscene(level, '1')
+
 #######################################################
 bg1 = level.add_create_layer("bg1", parallax=0.36)
 bg2 = level.add_create_layer("bg2", parallax=0.67)
@@ -33,15 +34,27 @@ level.add_player(player)
 
 ########################################################################################################################
 
+
+
 menu_button = UIButton(10, 20, text="Menù", width=100, height=40)
 menu_button.on_click = lambda: game.set_scene('0')
 menu_button2 = UIButton(10, 60, text="Save", width=100, height=40)
 menu_button2.on_click = lambda: level.save('saves/')
-menu_button3 = UIButton(10, 100, text="Load", width=100, height=40)
-menu_button3.on_click = lambda:  level.load('saves/')
+menu_button2 = UIButton(10, 80, text="Save as", width=100, height=40)
+menu_button2.on_click = lambda: level.save('saves/')
+
 uilayer.add_element(menu_button)
 uilayer.add_element(menu_button2)
-uilayer.add_element(menu_button3)
+
+save_menu = SaveMenu(game)
+game.addscene(save_menu, 'save_selector')
+save_as_scene = SaveAsMenu(game, level)
+game.addscene(save_as_scene, 'save_as')
+
+save_as_button = UIButton(10, 140, text="Save As...", width=100, height=40)
+save_as_button.on_click = lambda: game.set_scene('save_as')
+uilayer.add_element(save_as_button)
+
 
 
 while game.state == 0:

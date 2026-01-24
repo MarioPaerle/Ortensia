@@ -24,7 +24,8 @@ class Game(Root):
                 exit()
 
             def play_game():
-                self.set_scene('1')
+                # self.set_scene('1')
+                self.set_scene('save_selector')
 
             playbutton = UIButton(*_scene0.c_justified_pos(150, 50, dy=100), text='Close Game')
             playbutton2 = UIButton(*_scene0.c_justified_pos(150, 50, dy=0), text='Singleplayer')
@@ -214,8 +215,12 @@ class Player(AnimatedSolidSprite):
             file.write(json.dumps(f))
 
     def load(self, level, path=''):
-        with open(path + '-player.json') as file:
-            datas = file.read()
+        try:
+            with open(path + '-player.json') as file:
+                datas = file.read()
+        except FileNotFoundError:
+            flag(f"No BlockMap found at {path}")
+            return
         datas = json.loads(datas)
         x = datas['x']
         y = datas['y']
@@ -256,6 +261,85 @@ class WorldLevel(Scene):
     def load(self, path):
         for savable in self.savable_objects:
             savable.load(self, path=path)
+
+
+import os
+import json
+
+
+def get_save_names(path='saves/'):
+    if not os.path.exists(path):
+        os.makedirs(path)
+    files = [f.replace('-blockmap.json', '') for f in os.listdir(path) if f.endswith('-blockmap.json')]
+    return files
+
+
+class SaveMenu(Scene):
+    def __init__(self, game_root):
+        super().__init__(game_root)
+        self.ui = UILayer("SaveSelection")
+        self.add_layer(self.ui)
+        self.refresh_saves()
+        self.root = game_root
+
+    def refresh_saves(self):
+        self.ui.elements.clear()
+
+        saves = get_save_names()
+
+        # Title
+        self.ui.add_element(UIText(x=self.centerx - 100, y=50, text="Select World", size=40))
+
+        start_y = 120
+        for i, save_name in enumerate(saves):
+            btn = UIButton(
+                x=self.centerx - 150,
+                y=start_y + (i * 55),
+                width=300,
+                height=45,
+                text=save_name
+            )
+            # Use a closure to capture the correct save_name for the click event
+            btn.on_click = lambda name=save_name: self.load_and_play(name)
+            self.ui.add_element(btn)
+
+        # Back Button
+        back_btn = UIButton(x=self.centerx - 75, y=500, width=150, height=40, text="Back to Title")
+        back_btn.on_click = lambda: self.root.set_scene('0')
+        self.ui.add_element(back_btn)
+
+    def load_and_play(self, save_name):
+        self.root.set_scene('1')
+        world_level = self.root.loaded_scenes['1']
+        world_level.load(f"saves/{save_name}")
+
+
+class SaveAsMenu(Scene):
+    def __init__(self, game_root, world_level):
+        super().__init__(game_root)
+        self.world_level = world_level
+        self.root = game_root
+        self.ui = UILayer("SaveAs")
+        self.add_layer(self.ui)
+
+        self.input_box = UITextInput(self.centerx - 100, self.centery - 50, 200, 40)
+        self.ui.add_element(self.input_box)
+
+        confirm_btn = UIButton(self.centerx - 60, self.centery + 20, 120, 40, text="Confirm Save")
+        confirm_btn.on_click = self.perform_save
+        self.ui.add_element(confirm_btn)
+
+        cancel_btn = UIButton(self.centerx - 60, self.centery + 70, 120, 40, text="Cancel")
+        cancel_btn.on_click = lambda: self.root.set_scene('1') # Back to game
+        self.ui.add_element(cancel_btn)
+
+    def perform_save(self):
+        filename = self.input_box.text.strip()
+        if filename:
+            full_path = f"saves/{filename}"
+            self.world_level.save(path=full_path)
+            flag(f"Created new save: {filename}", level=0)
+            self.root.set_scene('1')
 
 
 if __name__ == "__main__":

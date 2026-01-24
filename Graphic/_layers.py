@@ -193,8 +193,6 @@ class ChunkedLayer:
             self.large_sprites.remove(sprite)
             return True
 
-        # Use explicit coordinates if provided, otherwise default to sprite.x/y
-        # This is the key fix for moving blocks!
         check_x = x if x is not None else sprite.x
         check_y = y if y is not None else sprite.y
 
@@ -206,8 +204,6 @@ class ChunkedLayer:
                 self.chunks[(cx, cy)].remove(sprite)
                 return True
 
-        # Fallback: If not found in the calculated chunk, scan neighbors
-        # (Handles edge cases where rounding errors caused a mismatch)
         for ox in [-1, 0, 1]:
             for oy in [-1, 0, 1]:
                 ncx, ncy = cx + ox, cy + oy
@@ -695,15 +691,20 @@ class BlockMap:
         flag("Saved BlockMap")
 
     def load(self, level, path=''):
+        try:
+            with open(path + '-blockmap.json') as file:
+                datas = file.read()
+        except FileNotFoundError:
+            flag(f"No BlockMap found at {path}")
+            return
         self.reset(level)
-        with open(path + '-blockmap.json') as file:
-            datas = file.read()
+
         datas = json.loads(datas)
         for block in datas:
             self.set_tile(*eval(block), level.registered_blocks[datas[block]])
 
     def loadstruct(self, level, path=''):
-        with open(path + '-blockmap.json') as file:
+        with open(path + 'am-blockmap.json') as file:
             datas = file.read()
         datas = json.loads(datas)
         for block in datas:
