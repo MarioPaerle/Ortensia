@@ -149,11 +149,13 @@ class Player(AnimatedSolidSprite):
 
         self.SPEED_X = 200
         self.JUMP_FORCE = 240
+        self.def_GRAVITY = 500
         self.GRAVITY = 500
+        self.mode = 0  # 0 surv, 1 creative
 
-    def physics(self, dt, dx):
+    def physics(self, dt, dx, dy=0):
         self.vy += self.GRAVITY * dt
-        dy = self.vy * dt
+        dy = self.vy * dt + dy
 
         collide = self.move(dx, dy, self.level.grid)
 
@@ -164,27 +166,35 @@ class Player(AnimatedSolidSprite):
         elif collide == 'u':
             self.vy = 0
 
+    def switch_mode(self):
+        if self.mode == 0:
+            self.mode = 1
+            self.GRAVITY = 0
+        else:
+            self.mode = 0
+            self.GRAVITY = self.def_GRAVITY
+
     def mechaniches(self, keys, dt):
         current_vx = 0
-
+        dy = 0
         if keys[pygame.K_LEFT]:  current_vx -= self.SPEED_X
         if keys[pygame.K_RIGHT]: current_vx += self.SPEED_X
 
         if keys[pygame.K_UP] and self.on_floor:
             self.vy = -self.JUMP_FORCE
 
-        if keys[pygame.K_q]:  game.main_camera.apply_zoom(0.5 * dt)
-        if keys[pygame.K_e]:  game.main_camera.apply_zoom(-0.5 * dt)
+        elif keys[pygame.K_UP] and self.mode == 1:
+            dy = -300 * dt
 
-        if keys[pygame.K_SPACE] and not self.added:
-            self.added = True
-            self.level.main_camera.shake_intensity = 1
-            fg.add_light(wall_lamp4)
+        if keys[pygame.K_DOWN] and self.mode == 1:
+            dy = 300 * dt
+
+        if keys[pygame.K_q]:  self.level.main_camera.apply_zoom(0.5 * dt)
+        if keys[pygame.K_e]:  self.level.main_camera.apply_zoom(-0.5 * dt)
 
         dx = current_vx * dt
 
-        # Esegui la fisica
-        self.physics(dt, dx)
+        self.physics(dt, dx, dy)
 
         if dx != 0:
             self.set_state("walk")
@@ -196,6 +206,7 @@ class Player(AnimatedSolidSprite):
             ms = self.level.map_system
             mouse_buttons = pygame.mouse.get_pressed()
             mx, my = pygame.mouse.get_pos()
+            ms.placer_light(mx, my)
             if mouse_buttons[0]:
                 block = self.slotbar[self.slotbar_index]
                 ms.place_tile(mx, my, block=block)
@@ -211,12 +222,12 @@ class Player(AnimatedSolidSprite):
             'y': self.y,
             'slotbar': [s.id for s in self.slotbar]
         }
-        with open(path + '-player.json', 'w') as file:
+        with open(path + '/-player.json', 'w') as file:
             file.write(json.dumps(f))
 
     def load(self, level, path=''):
         try:
-            with open(path + '-player.json') as file:
+            with open(path + '/-player.json') as file:
                 datas = file.read()
         except FileNotFoundError:
             flag(f"No BlockMap found at {path}")
@@ -234,6 +245,7 @@ class WorldLevel(Scene):
         self.map_system = map_system
         self.registered_blocks = {}
         self.savable_objects = []
+        self.level_name = ''
 
     def set_map(self, map_system):
         if self.map_system is not None:
@@ -241,6 +253,7 @@ class WorldLevel(Scene):
         self.map_system = map_system
         self.updatables.append(self.map_system)
         self.savable_objects.append(self.map_system)
+        self.add_renderable(self.map_system, -2)
 
     def add_player(self, player):
         self.player = player
@@ -254,11 +267,15 @@ class WorldLevel(Scene):
         for obj in self.solids:
             self.grid.insert(obj)
 
-    def save(self, path='saves/'):
+    def save(self, path='saves'):
+        os.makedirs(path, exist_ok=True)
+        os.makedirs(path + '/' + self.level_name, exist_ok=True)
+
         for savable in self.savable_objects:
-            savable.save(path=path)
+            savable.save(path=path + '/' + self.level_name)
 
     def load(self, path):
+        self.level_name = path.split('/')[-1]
         for savable in self.savable_objects:
             savable.load(self, path=path)
 
@@ -266,12 +283,8 @@ class WorldLevel(Scene):
 import os
 import json
 
-
 def get_save_names(path='saves/'):
-    if not os.path.exists(path):
-        os.makedirs(path)
-    files = [f.replace('-blockmap.json', '') for f in os.listdir(path) if f.endswith('-blockmap.json')]
-    return files
+    return os.listdir(path)
 
 
 class SaveMenu(Scene):
@@ -287,7 +300,6 @@ class SaveMenu(Scene):
 
         saves = get_save_names()
 
-        # Title
         self.ui.add_element(UIText(x=self.centerx - 100, y=50, text="Select World", size=40))
 
         start_y = 120
@@ -299,11 +311,18 @@ class SaveMenu(Scene):
                 height=45,
                 text=save_name
             )
-            # Use a closure to capture the correct save_name for the click event
+            btn2 = UIButton(
+                x=self.centerx + 160,
+                y=start_y + (i * 55),
+                width=50,
+                height=45,
+                text='Del'
+            )
             btn.on_click = lambda name=save_name: self.load_and_play(name)
+            btn2.on_click = lambda name=save_name: self.remove(name)
             self.ui.add_element(btn)
+            self.ui.add_element(btn2)
 
-        # Back Button
         back_btn = UIButton(x=self.centerx - 75, y=500, width=150, height=40, text="Back to Title")
         back_btn.on_click = lambda: self.root.set_scene('0')
         self.ui.add_element(back_btn)
@@ -312,6 +331,14 @@ class SaveMenu(Scene):
         self.root.set_scene('1')
         world_level = self.root.loaded_scenes['1']
         world_level.load(f"saves/{save_name}")
+
+    def remove(self, save_name):
+        try:
+            for file in os.listdir("saves"):
+                if f"{save_name}-" in file:  # TODO: This is Brutally wrong
+                    os.remove(f"saves/{file}")
+        except PermissionError:
+            flag(f"Impossible to delete {save_name} due to Lack of Permissions", 3)
 
 
 class SaveAsMenu(Scene):
@@ -330,14 +357,14 @@ class SaveAsMenu(Scene):
         self.ui.add_element(confirm_btn)
 
         cancel_btn = UIButton(self.centerx - 60, self.centery + 70, 120, 40, text="Cancel")
-        cancel_btn.on_click = lambda: self.root.set_scene('1') # Back to game
+        cancel_btn.on_click = lambda: self.root.set_scene('1')  # Back to game
         self.ui.add_element(cancel_btn)
 
     def perform_save(self):
         filename = self.input_box.text.strip()
         if filename:
-            full_path = f"saves/{filename}"
-            self.world_level.save(path=full_path)
+            self.world_level.level_name = filename
+            self.world_level.save()
             flag(f"Created new save: {filename}", level=0)
             self.root.set_scene('1')
 

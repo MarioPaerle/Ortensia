@@ -288,6 +288,7 @@ class ChunkedLayer:
         for effect_fn, args in self.effects:
             effect_fn(layer_surf, *args)
 
+
         if zoom != 1.0:
             scaled_output = pygame.transform.smoothscale(layer_surf, (screen_w, screen_h))
             screen.blit(scaled_output, (0, 0))
@@ -545,6 +546,10 @@ class BlockMap:
         self.data = {}
         self.physics_blocks = []
         self.lights = {}
+        self.hover_light = None
+        self.hover_timer = 0.0
+        self.hover_default_color = (190, 190, 255)
+        self.hover_color = (190, 190, 255)
 
     def get_grid_pos(self, screen_x, screen_y):
         cam_x = self.level.main_camera.x * self.layer.parallax
@@ -556,6 +561,16 @@ class BlockMap:
         gx = int(world_x // self.tile_size)
         gy = int(world_y // self.tile_size)
         return gx, gy
+
+    def get_grid_distance(self, p, q):
+        p = self.get_grid_pos(*p)
+        q = self.get_grid_pos(*q)
+        return math.sqrt((p[0] - q[0]) ** 2 + (p[1] - q[1])**2)
+
+    def get_grid_distance2(self, p, q):
+        p = p # TODO
+        q = self.get_grid_pos(*q)
+        return math.sqrt((p[0] - q[0]) ** 2 + (p[1] - q[1])**2)
 
     def place_tile(self, screen_x, screen_y, block: Block):
         gx, gy = self.get_grid_pos(screen_x, screen_y)
@@ -578,6 +593,31 @@ class BlockMap:
 
         if tile_sprite.physics_block:
             self.physics_blocks.append(tile_sprite)
+
+    def render(self, surface, camera):
+        cam_x = camera.x * self.layer.parallax
+        cam_y = camera.y * self.layer.parallax
+
+        rect_x = (self.cursor_gx * self.tile_size) - cam_x
+        rect_y = (self.cursor_gy * self.tile_size) - cam_y
+
+        pulse_alpha = int(30 + math.sin(self.hover_timer) * 15)
+
+        cursor_surf = pygame.Surface((self.tile_size, self.tile_size), pygame.SRCALPHA)
+        cursor_surf.fill((*self.hover_color, pulse_alpha))
+
+        pygame.draw.rect(cursor_surf, (*self.hover_color, 70),
+                         (0, 0, self.tile_size, self.tile_size), 1)
+
+        surface.blit(cursor_surf, (rect_x, rect_y))
+
+    def placer_light(self, screen_x, screen_y, color=None):
+        """Calculates the grid position for the highlight."""
+        if color is not None:
+            self.hover_color = color
+        else:
+            self.hover_color = self.hover_default_color
+        self.cursor_gx, self.cursor_gy = self.get_grid_pos(screen_x, screen_y)
 
     def set_tile(self, gx, gy, block: Block):
         if (gx, gy) in self.data:
@@ -632,6 +672,7 @@ class BlockMap:
             del self.lights[(gx, gy)]
 
     def update(self, dt):
+        self.hover_timer += dt * 2.5
         if not self.physics_blocks:
             return
 
@@ -669,6 +710,7 @@ class BlockMap:
             for obj in self.level.solids:
                 self.level.grid.insert(obj)
 
+
     def __getstate__(self):
         state = self.__dict__.copy()
 
@@ -685,14 +727,14 @@ class BlockMap:
 
     def save(self, path=''):
         f = json.dumps({str(s): self.data[s].id for s in self.data})
-        with open(path + '-blockmap.json', 'w') as file:
+        with open(path + '/-blockmap.json', 'w') as file:
             file.write(f)
 
         flag("Saved BlockMap")
 
     def load(self, level, path=''):
         try:
-            with open(path + '-blockmap.json') as file:
+            with open(path + '/-blockmap.json') as file:
                 datas = file.read()
         except FileNotFoundError:
             flag(f"No BlockMap found at {path}")

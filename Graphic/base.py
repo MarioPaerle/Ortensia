@@ -689,6 +689,7 @@ class Scene:
         self.layer_type = ChunkedLayer
         self.updatables = []
         self.mechaniques = []
+        self.renderables = {}  # must be a dict of tuples with (index of layer on top to blit, surf)
 
         # Simulated 3D
         self.anaglyph_mode = False
@@ -790,6 +791,12 @@ class Scene:
 
             pygame.display.flip()
 
+    def add_renderable(self, renderable, index):
+        if index in self.renderables:
+            self.renderables[index].append(renderable)
+        else:
+            self.renderables[index] = [renderable]
+
     def update(self):
         dt = self.clock.tick(self.max_fps) / self.game_div
         events = pygame.event.get()
@@ -815,7 +822,6 @@ class Scene:
         for updt in self.updatables:
             updt.update(dt)
 
-
         for emitter in self.particle_emitters:
             emitter.update(dt)
 
@@ -832,6 +838,11 @@ class Scene:
 
                 if hasattr(layer, 'update'):
                     layer.update(dt)
+
+                for renderable in self.renderables.get(i, []):
+                    renderable.render(self.screen, self.main_camera)
+                for renderable in self.renderables.get(-len(self.layers) + i, []):
+                    renderable.render(self.screen, self.main_camera)
 
         if self.particle_layer_idx == -1:
             for emitter in self.particle_emitters:

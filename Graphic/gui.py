@@ -191,6 +191,6 @@ class UITextInput(UIElement):
 
     def draw(self, screen):
         color = self.color_active if self.active else self.color_inactive
-        pygame.draw.rect(screen, color, self.rect, 2)
         text_surf = self.font.render(self.text, True, (255, 255, 255))
         screen.blit(text_surf, (self.x + 5, self.y + 10))
+        pygame.draw.rect(screen, color, self.rect, 2)
