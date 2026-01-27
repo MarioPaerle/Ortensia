@@ -288,7 +288,6 @@ class ChunkedLayer:
         for effect_fn, args in self.effects:
             effect_fn(layer_surf, *args)
 
-
         if zoom != 1.0:
             scaled_output = pygame.transform.smoothscale(layer_surf, (screen_w, screen_h))
             screen.blit(scaled_output, (0, 0))
@@ -565,12 +564,12 @@ class BlockMap:
     def get_grid_distance(self, p, q):
         p = self.get_grid_pos(*p)
         q = self.get_grid_pos(*q)
-        return math.sqrt((p[0] - q[0]) ** 2 + (p[1] - q[1])**2)
+        return math.sqrt((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2)
 
     def get_grid_distance2(self, p, q):
-        p = p # TODO
+        p = p  # TODO
         q = self.get_grid_pos(*q)
-        return math.sqrt((p[0] - q[0]) ** 2 + (p[1] - q[1])**2)
+        return math.sqrt((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2)
 
     def place_tile(self, screen_x, screen_y, block: Block):
         gx, gy = self.get_grid_pos(screen_x, screen_y)
@@ -709,7 +708,6 @@ class BlockMap:
             self.level.grid.clear()
             for obj in self.level.solids:
                 self.level.grid.insert(obj)
-
 
     def __getstate__(self):
         state = self.__dict__.copy()

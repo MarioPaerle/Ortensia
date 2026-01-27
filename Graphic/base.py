@@ -693,7 +693,7 @@ class Scene:
 
         # Simulated 3D
         self.anaglyph_mode = False
-        self.stereo_separation = 6.0  # Distanza tra gli "occhi" (in pixel)
+        self.stereo_separation = 6.0
         self._left_buffer = None
         self._right_buffer = None
 
@@ -804,7 +804,7 @@ class Scene:
             if event.type == pygame.QUIT:
                 self.running = False
 
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_3:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_g:
                 self.anaglyph_mode = not self.anaglyph_mode
                 flag("Activated Anaglyph 3d mode")
 

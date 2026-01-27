@@ -27,6 +27,7 @@ bg2.add_static(
     Sprite(-100, -20, 2304 // 2, 1396 // 2, (40, 40, 80), texture='assets/textures/backgrounds/5.png', alpha=True))
 
 player = Player(400, 300, 64, 64, level=level, cw=16, coffset_x=23, coffset_y=-6)
+
 walk_loader = AnimationLoader("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1))
 player.add_animation('walk', walk_loader)
 fg.sprites.append(player)
@@ -45,6 +46,7 @@ uilayer.add_element(menu_button)
 uilayer.add_element(menu_button2)
 uilayer.add_element(save_as_button)
 uilayer.add_element(gamemode_button)
+
 
 ########################################################################################################################
 

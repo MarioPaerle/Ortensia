@@ -11,6 +11,6 @@ RAPIDBLOCKS = {
              )
     for i,n in enumerate(names)
 }
-
+RAPIDBLOCKS['_None'] = Block(40, 40, '_None')
 print(f'Registered {len(RAPIDBLOCKS)} blocks')
 print(RAPIDBLOCKS)

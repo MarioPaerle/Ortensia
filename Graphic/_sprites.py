@@ -345,10 +345,6 @@ class AnimatedSolidSprite(SolidSprite):
 
 
 class Block(SolidSprite):
-    """
-    A template block that clones itself.
-    Inherits 'move' from SolidSprite, so it has physics too!
-    """
 
     def __init__(
             self,
@@ -359,6 +355,7 @@ class Block(SolidSprite):
             alpha=False,
             emitter=None,
             physics=False,
+            color=(0, 0, 0),
             speed_multiplier=1.0,
             bounce_multiplier=1.0,
             stickyness=0.0,

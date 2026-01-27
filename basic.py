@@ -142,16 +142,17 @@ class Player(AnimatedSolidSprite):
         self.added = False
         self.on_floor = False
         self.inventory = {}
-        self.slotbar = [
-            level.registered_blocks['deepslate.png']
-        ]
-        self.slotbar_index = 0
+        self.slotbar = SlotBar(x=260, y=0, level=level, slot_count=9)
+        self.uilayer = UILayer()
+        self.uilayer.add_element(self.slotbar)
+        level.add_layer(self.uilayer)
 
         self.SPEED_X = 200
         self.JUMP_FORCE = 240
         self.def_GRAVITY = 500
         self.GRAVITY = 500
-        self.mode = 0  # 0 surv, 1 creative
+        self.FLYING = False
+        self.mode = 0
 
     def physics(self, dt, dx, dy=0):
         self.vy += self.GRAVITY * dt
@@ -169,7 +170,7 @@ class Player(AnimatedSolidSprite):
     def switch_mode(self):
         if self.mode == 0:
             self.mode = 1
-            self.GRAVITY = 0
+            # self.GRAVITY = 0
         else:
             self.mode = 0
             self.GRAVITY = self.def_GRAVITY
@@ -177,23 +178,31 @@ class Player(AnimatedSolidSprite):
     def mechaniches(self, keys, dt):
         current_vx = 0
         dy = 0
-        if keys[pygame.K_LEFT]:  current_vx -= self.SPEED_X
-        if keys[pygame.K_RIGHT]: current_vx += self.SPEED_X
+        if keys[pygame.K_a]:  current_vx -= self.SPEED_X
+        if keys[pygame.K_d]: current_vx += self.SPEED_X
 
-        if keys[pygame.K_UP] and self.on_floor:
+        if keys[pygame.K_SPACE] and self.on_floor:
             self.vy = -self.JUMP_FORCE
 
-        elif keys[pygame.K_UP] and self.mode == 1:
+        elif keys[pygame.K_w] and self.mode == 1 and (not self.on_floor or self.FLYING):
+            self.FLYING = True
+            self.vy = 0
             dy = -300 * dt
 
-        if keys[pygame.K_DOWN] and self.mode == 1:
+        if keys[pygame.K_s] and self.mode == 1:
             dy = 300 * dt
 
         if keys[pygame.K_q]:  self.level.main_camera.apply_zoom(0.5 * dt)
         if keys[pygame.K_e]:  self.level.main_camera.apply_zoom(-0.5 * dt)
 
-        dx = current_vx * dt
+        if self.FLYING:
+            self.GRAVITY = 0
+        else:
+            self.GRAVITY = self.def_GRAVITY
+        if self.FLYING and self.on_floor:
+            self.FLYING = False
 
+        dx = current_vx * dt
         self.physics(dt, dx, dy)
 
         if dx != 0:
@@ -202,25 +211,25 @@ class Player(AnimatedSolidSprite):
             self.set_state("idle")
 
         self.update_animation(dt)
-        if hasattr(self.level, "map_system"):
-            ms = self.level.map_system
-            mouse_buttons = pygame.mouse.get_pressed()
-            mx, my = pygame.mouse.get_pos()
-            ms.placer_light(mx, my)
-            if mouse_buttons[0]:
-                block = self.slotbar[self.slotbar_index]
+        ms = self.level.map_system
+        mouse_buttons = pygame.mouse.get_pressed()
+        mx, my = pygame.mouse.get_pos()
+        ms.placer_light(mx, my)
+        if mouse_buttons[0]:
+            block = self.slotbar.get_and_use_selected(consume=(1 if self.mode == 0 else 0))
+            if block.id is not '_None':
                 ms.place_tile(mx, my, block=block)
                 self.level.refresh_grid()
 
-            if mouse_buttons[2]:
-                ms.remove_tile(mx, my)
-                self.level.refresh_grid()
+        if mouse_buttons[2]:
+            ms.remove_tile(mx, my)
+            self.level.refresh_grid()
 
     def save(self, path=''):
         f = {
             'x': self.x,
             'y': self.y,
-            'slotbar': [s.id for s in self.slotbar]
+            'slotbar': [[a.id, i] for a, i in self.slotbar.slots]
         }
         with open(path + '/-player.json', 'w') as file:
             file.write(json.dumps(f))
@@ -236,7 +245,94 @@ class Player(AnimatedSolidSprite):
         x = datas['x']
         y = datas['y']
         self.setpos(x, y)
-        self.slotbar = [level.registered_blocks[d] for d in datas['slotbar']]
+        self.slotbar.slots = [[level.registered_blocks[d], k] for d, k in datas['slotbar']]
+        self.slotbar.render_bar()
+
+
+class SlotBar(UIElement):
+    def __init__(self, x, y, level, slot_count=9, scale=50):
+        padding = 4
+        width = (scale + padding) * slot_count + padding
+        height = scale + padding * 2
+
+        super().__init__(x, y, width, height)
+
+        self.level = level
+        self.slot_count = slot_count
+        self.scale = scale
+        self.padding = padding
+        self.selected_index = 0
+
+        self.slots = [[a, 1] for a in list(level.registered_blocks.values())[:slot_count]]
+
+        while len(self.slots) < slot_count:
+            self.slots.append( self.level.registered_blocks['_None'])
+
+        self.font = pygame.font.SysFont("Arial", 12, bold=True)
+
+
+    def get_selected(self):
+        if 0 <= self.selected_index < len(self.slots):
+            return self.slots[self.selected_index][0]
+        return None
+
+    def get_and_use_selected(self, consume=0):
+        if consume == 0:
+            return self.get_selected()
+        if 0 <= self.selected_index < len(self.slots):
+            self.slots[self.selected_index][1] -= 1
+            ret = self.slots[self.selected_index][0]
+            if self.slots[self.selected_index][1] == 0:
+                self.slots[self.selected_index][0] = self.level.registered_blocks['_None']
+                self.render_bar()
+            return ret
+        return None
+
+    def render_bar(self):
+        self.surface.fill((0, 0, 0, 0))
+
+        for i in range(self.slot_count):
+            px = self.padding + i * (self.scale + self.padding)
+            py = self.padding
+            slot_rect = pygame.Rect(px, py, self.scale, self.scale)
+
+            pygame.draw.rect(self.surface, (50, 50, 50, 200), slot_rect)
+
+            if i == self.selected_index:
+                pygame.draw.rect(self.surface, (255, 255, 255), slot_rect, width=3)
+            else:
+                pygame.draw.rect(self.surface, (140, 140, 140), slot_rect, width=1)
+
+            block = self.slots[i][0]
+            if block.id is '_None':
+                continue
+            icon_size = self.scale - 12
+            icon_surf = pygame.transform.scale(block.surface, (icon_size, icon_size))
+
+            ix = px + (self.scale - icon_size) // 2
+            iy = py + (self.scale - icon_size) // 2
+            self.surface.blit(icon_surf, (ix, iy))
+
+            num_surf = self.font.render(str(i + 1), True, (255, 255, 255))
+            self.surface.blit(num_surf, (px + 3, py + 3))
+
+            count_surf = self.font.render(str(self.slots[i][1]), True, (255, 255, 255))
+            self.surface.blit(count_surf, (px + 3, py + self.scale - 15))
+
+    def handle_event(self, event):
+        if not self.visible:
+            return False
+
+        if event.type == pygame.KEYDOWN:
+            if pygame.K_1 <= event.key <= pygame.K_9:
+                new_index = event.key - pygame.K_1
+
+                if new_index < self.slot_count:
+                    self.selected_index = new_index
+                    self.render_bar()
+                    return True
+
+        return False
 
 
 class WorldLevel(Scene):
@@ -282,6 +378,7 @@ class WorldLevel(Scene):
 
 import os
 import json
+
 
 def get_save_names(path='saves/'):
     return os.listdir(path)
