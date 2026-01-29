@@ -2,7 +2,7 @@ import pygame
 from typing import List, Any, Optional
 import numpy as np
 import copy
-from Graphic.functions import load_spritesheet
+from Graphic.functions import load_horizontal_spritesheet
 
 
 class Sprite:
@@ -40,7 +40,6 @@ class Sprite:
     def __setstate__(self, state):
         self.__dict__.update(state)
         self._load_surface()
-
 
     def pos(self):
         return (self.x, self.y)
@@ -214,7 +213,7 @@ class AnimationLoader:
 
     def get_frames(self):
         if self.frames is None:
-            self.frames = load_spritesheet(self.file, self.w, self.h, row=self.row, scale=self.scale)
+            self.frames = load_horizontal_spritesheet(self.file, self.w, self.h, row=self.row, scale=self.scale)
         return self.frames
 
     def __getstate__(self):
@@ -240,13 +239,13 @@ class AnimatedSolidSprite(SolidSprite):
         self.frame_index = 0.0
         self.animation_speed = 10.0
 
-    def add_animation(self, name: str, loader):
+    def add_animation(self, name: str, frames, loader=None):
         """
         Registers an animation using a loader.
         The loader is saved; the surfaces are generated immediately for use.
         """
-        self.anim_loaders[name] = loader
-        self.animations[name] = loader.get_frames()
+        # self.anim_loaders[name] = loader
+        self.animations[name] = frames
 
     def update_animation(self, dt):
         """Advances the frame index based on time."""
@@ -276,7 +275,8 @@ class AnimatedSolidSprite(SolidSprite):
 
     def move(self, dx, dy, grid):
         """Movement with collision detection (inherited from SolidSprite)"""
-        collide = 'none'
+        collide = '_None'
+        collided_with = None
 
         self.frect.x += dx
         for other in grid.get_nearby(self.frect):
@@ -294,16 +294,17 @@ class AnimatedSolidSprite(SolidSprite):
                 if dy > 0:
                     self.frect.bottom = other.frect.top
                     collide = 'b'
+                    collided_with = other
                 if dy < 0:
                     self.frect.top = other.frect.bottom
                     collide = 'u'
+                    collided_with = other
 
         self.x = self.frect.x - self.coffset_x
         self.y = self.frect.y - self.coffset_y
-        return collide
+        return collide, collided_with
 
     def setpos(self, x, y):
-        """Movement with collision detection (inherited from SolidSprite)"""
         collide = 'none'
 
         self.frect.x = x + self.coffset_x
@@ -356,7 +357,7 @@ class Block(SolidSprite):
             h,
             id,
             texture=None,
-            alpha=False,
+            alpha=True,
             emitter=None,
             physics=False,
             color=(0, 0, 0),
@@ -458,6 +459,130 @@ class Block(SolidSprite):
             self.is_grounded = False
 
         return moved
+
+    def on_touch(self, other, dt=1):
+        pass
+
+    def __repr__(self):
+        return f'<Block {self.id} at ({self.x}, {self.y})>'
+
+
+class AnimatedBlock(AnimatedSolidSprite):
+
+    def __init__(
+            self,
+            w,
+            h,
+            id,
+            texture=None,
+            alpha=True,
+            emitter=None,
+            physics=False,
+            color=(0, 0, 0),
+            speed_multiplier=1.0,
+            bounce_multiplier=1.0,
+            stickyness=0.0,
+            hardness=0.0,
+            light_emission_intensity=0.0,
+            light_emission_color=(255, 255, 255),
+            gravity=980,
+            max_fall_speed=1000,
+    ):
+        super().__init__(
+            -100,
+            -100,
+            w,
+            h,
+            (100, 100, 100),
+            texture=texture,
+            alpha=alpha,
+        )
+
+        # Identity
+        self.id = id
+        self.name = "Generic Block"
+
+        self.emitter = emitter
+        self.physics_block = physics
+
+        self.speed_multiplier = speed_multiplier
+        self.bounce_multiplier = bounce_multiplier
+        self.stickyness = stickyness
+        self.hardness = hardness
+
+        # Lighting
+        self.light_emission_intensity = light_emission_intensity
+        self.light_emission_color = light_emission_color
+
+        # Physics state
+        self.velocity_y = 0.0
+        self.gravity = gravity
+        self.is_grounded = False
+        self.max_fall_speed = max_fall_speed
+
+    def clone(self):
+        new_obj = copy.copy(self)
+        new_obj.frect = self.frect.copy()
+
+        new_obj.velocity_y = 0
+        new_obj.is_grounded = False
+        return new_obj
+
+    def place(self, x, y):
+        new_block = self.clone()
+
+        new_block.frect.topleft = (x, y)
+        new_block.x = x
+        new_block.y = y
+
+        return new_block
+
+    def update_physics(self, dt, grid):
+        if not self.physics_block:
+            return False
+
+        self.velocity_y += self.gravity * dt
+
+        if self.velocity_y > self.max_fall_speed:
+            self.velocity_y = self.max_fall_speed
+
+        dy = self.velocity_y * dt
+
+        if abs(dy) < 0.01:
+            self.is_grounded = True
+            return False
+
+        old_y = self.frect.y
+
+        self.frect.y += dy
+
+        collision = False
+        for other in grid.get_nearby(self.frect):
+            if other is not self and self.frect.colliderect(other.frect):
+                if dy > 0:
+                    self.frect.bottom = other.frect.top
+                    self.velocity_y = 0
+                    self.is_grounded = True
+                    collision = True
+                elif dy < 0:
+                    self.frect.top = other.frect.bottom
+                    self.velocity_y = 0
+                    collision = True
+
+        self.y = self.frect.y
+
+        moved = abs(self.y - old_y) > 0.01
+
+        if not collision and moved:
+            self.is_grounded = False
+
+        return moved
+
+    def update(self, dt):
+        self.update_animation(dt)
+
+    def on_touch(self, other, dt=1):
+        pass
 
     def __repr__(self):
         return f'<Block {self.id} at ({self.x}, {self.y})>'

@@ -5,7 +5,7 @@ game = Game(1000, 600, title='Ortensia Creative Mode', flag=pygame.SCALED | pyga
 from blocks import *
 
 level = WorldLevel(game)
-level.registered_blocks = RAPIDBLOCKS
+level.register_blocks(BLOCKS)
 game.addscene(level, '1')
 
 #######################################################
@@ -19,7 +19,7 @@ level.add_layer(uilayer)
 map = BlockMap(level, fg)
 level.set_map(map)
 
-add_plane(map, 0, 10, 300, 1, block=level.registered_blocks['deepslate.png'])
+add_plane(map, 0, 10, 300, 1, block=level.registered_blocks['_Death'])
 
 bg1.add_static(
     Sprite(-100, -80, 2304 // 2, 1396 // 2, (40, 40, 80), texture='assets/textures/backgrounds/4.png', alpha=True))
@@ -28,8 +28,7 @@ bg2.add_static(
 
 player = Player(400, 300, 64, 64, level=level, cw=16, coffset_x=23, coffset_y=-6)
 
-walk_loader = AnimationLoader("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1))
-player.add_animation('walk', walk_loader)
+player.add_animation('walk', load_horizontal_spritesheet("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1)))
 fg.sprites.append(player)
 level.add_player(player)
 
@@ -47,15 +46,12 @@ uilayer.add_element(menu_button2)
 uilayer.add_element(save_as_button)
 uilayer.add_element(gamemode_button)
 
-
 ########################################################################################################################
 
 save_menu = SaveMenu(game)
 game.addscene(save_menu, 'save_selector')
 save_as_scene = SaveAsMenu(game, level)
 game.addscene(save_as_scene, 'save_as')
-
-
 
 while game.state == 0:
     game.update()

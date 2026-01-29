@@ -156,16 +156,29 @@ class Player(AnimatedSolidSprite):
         self.FLYING = False
         self.mode = 0
 
+    def die(self, message=''):
+        "Die animations and modalitiea"
+        flag(message, 1)
+        self.setpos(*self.level.spawnpoint)
+        self.life = self.max_life
+
+    def take_damage(self, quantity):
+        "Take a quantity of Damage"
+        if self.mode == 0:
+            self.life -= quantity
+
     def physics(self, dt, dx, dy=0):
         self.vy += self.GRAVITY * dt
         dy = self.vy * dt + dy
 
-        collide = self.move(dx, dy, self.level.grid)
+        collide, collided_with = self.move(dx, dy, self.level.grid)
 
         self.on_floor = False
         if collide == 'b':
             self.vy = 0
             self.on_floor = True
+            collided_with.on_touch(self, dt)
+
         elif collide == 'u':
             self.vy = 0
 
@@ -231,7 +244,14 @@ class Player(AnimatedSolidSprite):
         else:
             ms.placer_light(mx, my, color=(180, 20, 20))
 
+        if self.life <= 0:
+            self.die('Player Dead')
 
+        elif self.y > 1300:
+            self.die('Player Exceeded world minimum, felt into the void')
+
+        if self.life <= 0:
+            self.life = 0
 
     def save(self, path=''):
         f = {
@@ -253,7 +273,7 @@ class Player(AnimatedSolidSprite):
         x = datas['x']
         y = datas['y']
         self.setpos(x, y)
-        self.slotbar.slots = [[level.registered_blocks[d], k] for d, k in datas['slotbar']]
+        # self.slotbar.slots = [[level.registered_blocks[d], k] for d, k in datas['slotbar']]
         self.slotbar.render_bar()
 
 
@@ -272,12 +292,12 @@ class SlotBar(UIElement):
         self.selected_index = 0
 
         self.slots = [[a, 1] for a in list(level.registered_blocks.values())[:slot_count]]
+        self.slots[0] = [level.registered_blocks['Fire'], 64]
 
         while len(self.slots) < slot_count:
-            self.slots.append( self.level.registered_blocks['_None'])
+            self.slots.append([self.level.registered_blocks['_None'], 1])
 
         self.font = pygame.font.SysFont("Arial", 12, bold=True)
-
 
     def get_selected(self):
         if 0 <= self.selected_index < len(self.slots):
@@ -350,6 +370,7 @@ class WorldLevel(Scene):
         self.registered_blocks = {}
         self.savable_objects = []
         self.level_name = ''
+        self.spawnpoint = (400, 300)
 
     def set_map(self, map_system):
         if self.map_system is not None:
@@ -383,6 +404,11 @@ class WorldLevel(Scene):
         for savable in self.savable_objects:
             savable.load(self, path=path)
 
+    def register_blocks(self, blocks: dict):
+        self.registered_blocks = blocks
+        for block in self.registered_blocks:
+            if isinstance(self.registered_blocks[block], AnimatedBlock):
+                self.updatables.append(self.registered_blocks[block])
 
 import os
 import json

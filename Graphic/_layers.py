@@ -443,18 +443,15 @@ class LitLayer(ChunkedLayer):
             sx = s.x - cx
             sy = s.y - cy
 
-            # Culling Check
             if not (-s.width < sx < view_w and -s.height < sy < view_h):
                 continue
 
-            # Lighting Logic
             w, h = s.surface.get_size()
 
-            # Create lightmap for this sprite
             light_map = pygame.Surface((w, h), 0)
             light_map.fill(self.ambient_color)
 
-            if hasattr(s, 'update'): s.update()
+            # if hasattr(s, 'update'): s.update()
 
             s_center_x = s.x + w / 2
             s_center_y = s.y + h / 2
@@ -626,8 +623,9 @@ class BlockMap:
             self.hover_color = self.hover_default_color
         self.cursor_gx, self.cursor_gy = self.get_grid_pos(screen_x, screen_y)
 
-    def set_tile(self, gx, gy, block: Block):
-        if (gx, gy) in self.data:
+    def set_tile(self, gx, gy, block: Block, overwrite=False):
+        if (gx, gy) in self.data and not overwrite:
+            flag(f"Position ({gx, gy}) is already occupied. If you want to replace it use overwrite=True")
             return
 
         world_x = gx * self.tile_size
@@ -749,7 +747,7 @@ class BlockMap:
 
         datas = json.loads(datas)
         for block in datas:
-            self.set_tile(*eval(block), level.registered_blocks[datas[block]])
+            self.set_tile(*eval(block), level.registered_blocks.get(datas[block], level.registered_blocks['_None']))
 
     def loadstruct(self, level, path=''):
         with open(path + 'am-blockmap.json') as file:
