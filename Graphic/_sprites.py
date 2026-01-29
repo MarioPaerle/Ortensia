@@ -42,6 +42,10 @@ class Sprite:
         self._load_surface()
 
 
+    def pos(self):
+        return (self.x, self.y)
+
+
 class AnimatedSprite(Sprite):
     """Non-solid animated sprite that doesn't interact with physics"""
 

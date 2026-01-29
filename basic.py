@@ -146,11 +146,13 @@ class Player(AnimatedSolidSprite):
         self.uilayer = UILayer()
         self.uilayer.add_element(self.slotbar)
         level.add_layer(self.uilayer)
+        self.max_life = 20
+        self.life = 20
 
         self.SPEED_X = 200
-        self.JUMP_FORCE = 240
-        self.def_GRAVITY = 500
-        self.GRAVITY = 500
+        self.JUMP_FORCE = 260
+        self.def_GRAVITY = 620
+        self.GRAVITY = self.def_GRAVITY
         self.FLYING = False
         self.mode = 0
 
@@ -214,16 +216,22 @@ class Player(AnimatedSolidSprite):
         ms = self.level.map_system
         mouse_buttons = pygame.mouse.get_pressed()
         mx, my = pygame.mouse.get_pos()
-        ms.placer_light(mx, my)
-        if mouse_buttons[0]:
-            block = self.slotbar.get_and_use_selected(consume=(1 if self.mode == 0 else 0))
-            if block.id is not '_None':
-                ms.place_tile(mx, my, block=block)
-                self.level.refresh_grid()
+        distance = ms.get_grid_distance2(self.pos(), (mx, my))
+        if distance < 4 or self.mode == 1:
+            ms.placer_light(mx, my, color=(255, 255, 255))
+            if mouse_buttons[0]:
+                block = self.slotbar.get_and_use_selected(consume=(1 if self.mode == 0 else 0))
+                if block.id is not '_None':
+                    ms.place_tile(mx, my, block=block)
+                    self.level.refresh_grid()
 
-        if mouse_buttons[2]:
-            ms.remove_tile(mx, my)
-            self.level.refresh_grid()
+            if mouse_buttons[2]:
+                ms.remove_tile(mx, my)
+                self.level.refresh_grid()
+        else:
+            ms.placer_light(mx, my, color=(180, 20, 20))
+
+
 
     def save(self, path=''):
         f = {

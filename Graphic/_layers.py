@@ -567,9 +567,18 @@ class BlockMap:
         return math.sqrt((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2)
 
     def get_grid_distance2(self, p, q):
-        p = p  # TODO
-        q = self.get_grid_pos(*q)
-        return math.sqrt((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2)
+        """World object Distance"""
+        if hasattr(p, 'x') and hasattr(p, 'y'):
+            px_world, py_world = p.x, p.y
+        else:
+            px_world, py_world = p
+
+        gx_p = int(px_world // self.tile_size)
+        gy_p = int(py_world // self.tile_size)
+
+        gx_q, gy_q = self.get_grid_pos(*q)
+
+        return math.sqrt((gx_p - gx_q) ** 2 + (gy_p - gy_q) ** 2)
 
     def place_tile(self, screen_x, screen_y, block: Block):
         gx, gy = self.get_grid_pos(screen_x, screen_y)
@@ -611,7 +620,6 @@ class BlockMap:
         surface.blit(cursor_surf, (rect_x, rect_y))
 
     def placer_light(self, screen_x, screen_y, color=None):
-        """Calculates the grid position for the highlight."""
         if color is not None:
             self.hover_color = color
         else:
