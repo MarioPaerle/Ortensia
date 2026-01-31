@@ -448,10 +448,9 @@ class LitLayer(ChunkedLayer):
 
             w, h = s.surface.get_size()
 
-            light_map = pygame.Surface((w, h), 0)
+            light_map = pygame.Surface((w, h), 0) # TODO: WTF!?
             light_map.fill(self.ambient_color)
 
-            # if hasattr(s, 'update'): s.update()
 
             s_center_x = s.x + w / 2
             s_center_y = s.y + h / 2
@@ -470,7 +469,6 @@ class LitLayer(ChunkedLayer):
 
             layer_surf.blit(final_sprite, (int(sx), int(sy)))
 
-        # --- 4. Post-Processing ---
         if emitters:
             for em in emitters:
                 em.draw(layer_surf, camera, self.parallax)

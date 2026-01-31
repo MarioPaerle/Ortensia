@@ -3,7 +3,8 @@ from typing import List, Any, Optional
 import numpy as np
 import copy
 from Graphic.functions import load_horizontal_spritesheet
-
+import random
+import math
 
 class Sprite:
     def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False):
@@ -43,6 +44,30 @@ class Sprite:
 
     def pos(self):
         return (self.x, self.y)
+
+
+class WigglingSprite(Sprite):
+    def __init__(self, x, y, w, h, texture=None, speed=0.001, distance=10, vertical=True, *args, **kwargs):
+        super().__init__(x, y, w, h, texture=texture, *args, **kwargs)
+
+        self.start_x = x
+        self.start_y = y
+
+        self.wiggle_speed = speed
+        self.wiggle_distance = distance
+        self.vertical = vertical
+
+        self.time_offset = random.randint(0, 10000)
+
+    def update(self):
+        current_time = pygame.time.get_ticks() + self.time_offset
+
+        offset = math.sin(current_time * self.wiggle_speed) * self.wiggle_distance
+
+        if self.vertical:
+            self.y = self.start_y + offset
+        else:
+            self.x = self.start_x + offset
 
 
 class AnimatedSprite(Sprite):
@@ -184,6 +209,9 @@ class SolidSprite(Sprite):
         )
         pygame.draw.rect(target, self.hitbox_color, hitbox_rect, width=self.hitbox_width)
 
+    def on_touch(self, collide_with, dt):
+        pass
+
     def move(self, dx, dy, grid):
         """Movement with collision detection"""
         self.frect.x += dx
@@ -260,7 +288,6 @@ class AnimatedSolidSprite(SolidSprite):
             current_frame = current_frame % len(frames)
 
             base_frame = frames[current_frame]
-
             if hasattr(self, 'show_hitboxes') and self.show_hitboxes:
                 self.surface = base_frame.copy()
                 self.draw_hitbox()

@@ -259,12 +259,12 @@ class Player(AnimatedSolidSprite):
             'y': self.y,
             'slotbar': [[a.id, i] for a, i in self.slotbar.slots]
         }
-        with open(path + '/-player.json', 'w') as file:
+        with open(path + '/..' + '/-player.json', 'w') as file:
             file.write(json.dumps(f))
 
     def load(self, level, path=''):
         try:
-            with open(path + '/-player.json') as file:
+            with open(path + '/..' + '/-player.json') as file:
                 datas = file.read()
         except FileNotFoundError:
             flag(f"No BlockMap found at {path}")
@@ -291,8 +291,8 @@ class SlotBar(UIElement):
         self.padding = padding
         self.selected_index = 0
 
-        self.slots = [[a, 1] for a in list(level.registered_blocks.values())[:slot_count]]
-        self.slots[0] = [level.registered_blocks['Fire'], 64]
+        self.slots = [] # [[a, 1] for a in list(level.registered_blocks.values())[:slot_count]]
+        # self.slots[0] = [level.registered_blocks['Fire'], 64]
 
         while len(self.slots) < slot_count:
             self.slots.append([self.level.registered_blocks['_None'], 1])

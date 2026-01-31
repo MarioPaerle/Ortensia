@@ -15,7 +15,7 @@ RAPIDBLOCKS = {
 }
 BLOCKS = RAPIDBLOCKS
 BLOCKS['_None'] = Block(40, 40, '_None')
-BLOCKS['_Death'] = Deathblock(40, 40, '_death', texture=f'assets/textures/blocks/deepslate.png')
+BLOCKS['_Death'] = Deathblock(40, 40, '_Death', texture=f'assets/textures/blocks/deepslate.png')
 #######################################################################################################################
 Fire = AnimatedBlock(40, 40, 'Fire')
 Fire.add_animation('idle', load_vertical_spritesheet('assets/textures/blocks/campfire_fire.png', 32, 32, col='all', scale=(1, 1)))
