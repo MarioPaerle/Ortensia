@@ -139,6 +139,8 @@ class Player(AnimatedSolidSprite):
         self.level = level
         self.vx = 0
         self.vy = 0
+        self.x = self.frect.x
+        self.y = self.frect.y
         self.added = False
         self.on_floor = False
         self.inventory = {}
@@ -371,6 +373,7 @@ class WorldLevel(Scene):
         self.savable_objects = []
         self.level_name = ''
         self.spawnpoint = (400, 300)
+        self.update_call = lambda: 0
 
     def set_map(self, map_system):
         if self.map_system is not None:
@@ -409,6 +412,10 @@ class WorldLevel(Scene):
         for block in self.registered_blocks:
             if isinstance(self.registered_blocks[block], AnimatedBlock):
                 self.updatables.append(self.registered_blocks[block])
+
+    def update(self):
+        self.update_call()
+        super().update()
 
 import os
 import json

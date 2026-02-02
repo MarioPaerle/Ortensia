@@ -42,9 +42,9 @@ class UIElement:
     def update(self):
         pass
 
-    def draw(self, screen):
+    def draw(self, screen, offset=(0, 0)):
         if self.visible:
-            screen.blit(self.surface, (self.x, self.y))
+            screen.blit(self.surface, (self.x + offset[0], self.y + offset[1]))
 
 
 class UIText(UIElement):

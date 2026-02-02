@@ -763,9 +763,8 @@ class BlockMap:
 
 
 class UILayer(Layer):
-    def __init__(self, name="UI"):
-        # Parallax 0 is standard for UI
-        super().__init__(name, parallax=0.0)
+    def __init__(self, name="UI", parallax=0):
+        super().__init__(name, parallax=parallax)
         self.elements: List[UIElement] = []
 
     def add_element(self, element: UIElement):

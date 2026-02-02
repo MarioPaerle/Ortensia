@@ -10,18 +10,13 @@ INPUT_IMAGE = "my_level_design.png"
 # The game loads from: saves/[SaveName]/-blockmap.json
 OUTPUT_FILE = "saves/Test/-blockmap.json"
 
-# MAP COLORS TO BLOCK IDs
-# Format: (R, G, B): "Block_ID"
-# NOTE: Block IDs in your code seem to be filenames (e.g., 'dirt.png')
-# or special names (e.g., '_Death', 'Fire') depending on blocks.py.
+
 COLOR_MAP = {
     (0, 0, 0): "_None",  # Black = Empty/Air (or just skip it)
     (100, 100, 100): "glass.png",  # Gray = Stone
     (255, 0, 0): "_Death",  # Red = Death Block
 }
 
-
-# =================================================
 
 def convert_map():
     img = Image.open(INPUT_IMAGE)
@@ -44,8 +39,6 @@ def convert_map():
                 if block_id == "_None":
                     continue
 
-                # The game expects keys as string representations of tuples: "(x, y)"
-                # and values as the block ID string.
                 key = str((x, y))
                 block_data[key] = block_id
             else:

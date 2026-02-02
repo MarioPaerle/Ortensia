@@ -693,6 +693,7 @@ class Scene:
 
         # Simulated 3D
         self.anaglyph_mode = False
+        self.sbs_mode = False
         self.stereo_separation = 6.0
         self._left_buffer = None
         self._right_buffer = None
@@ -717,39 +718,89 @@ class Scene:
             self._left_buffer = pygame.Surface((w, h))
             self._right_buffer = pygame.Surface((w, h))
 
+        focal_parallax = 0.93
         original_cam_x = self.main_camera.x
-
-        self.main_camera.x = original_cam_x - (self.stereo_separation / 2)
 
         self._left_buffer.fill((20, 20, 30))
         for i, layer in enumerate(layers_to_draw):
-            if self.particle_layer_idx != -1 and self.particle_layer_idx == i:
-                layer.render(self._left_buffer, self.main_camera, emitters=emitters)
-            else:
-                layer.render(self._left_buffer, self.main_camera)
+            depth_factor = layer.parallax - focal_parallax
+            layer_shift = depth_factor * self.stereo_separation
 
-        if self.particle_layer_idx == -1:
-            for emitter in emitters:
-                emitter.draw(self._left_buffer, self.main_camera)
+            self.main_camera.x = original_cam_x - (layer_shift / 2)
+            layer.render(self._left_buffer, self.main_camera)
+
+            for renderable in self.renderables.get(i, []):
+                self.main_camera.x = original_cam_x
+                renderable.render(self._left_buffer, self.main_camera)
+                self.main_camera.x = original_cam_x - (layer_shift / 2)
 
         self._left_buffer.fill((255, 0, 0), special_flags=pygame.BLEND_MULT)
-        self.main_camera.x = original_cam_x + (self.stereo_separation / 2)
 
         self._right_buffer.fill((20, 20, 30))
         for i, layer in enumerate(layers_to_draw):
-            if self.particle_layer_idx != -1 and self.particle_layer_idx == i:
-                layer.render(self._right_buffer, self.main_camera, emitters=emitters)
-            else:
-                layer.render(self._right_buffer, self.main_camera)
+            depth_factor = layer.parallax - focal_parallax
+            layer_shift = depth_factor * self.stereo_separation
 
-        if self.particle_layer_idx == -1:
-            for emitter in emitters:
-                emitter.draw(self._right_buffer, self.main_camera)
+            self.main_camera.x = original_cam_x + (layer_shift / 2)
+            layer.render(self._right_buffer, self.main_camera)
+
+            for renderable in self.renderables.get(i, []):
+                self.main_camera.x = original_cam_x
+                renderable.render(self._right_buffer, self.main_camera)
+                self.main_camera.x = original_cam_x + (layer_shift / 2)
 
         self._right_buffer.fill((0, 255, 255), special_flags=pygame.BLEND_MULT)
 
         render_target.blit(self._left_buffer, (0, 0))
         render_target.blit(self._right_buffer, (0, 0), special_flags=pygame.BLEND_ADD)
+
+        self.main_camera.x = original_cam_x
+
+    def _render_sbs(self, render_target, layers_to_draw, emitters):
+        w, h = render_target.get_size()
+        half_w = w // 2
+
+        if self._left_buffer is None or self._left_buffer.get_size() != (w, h):
+            self._left_buffer = pygame.Surface((w, h))
+            self._right_buffer = pygame.Surface((w, h))
+
+        focal_parallax = 0.93
+        original_cam_x = self.main_camera.x
+
+        self._left_buffer.fill((20, 20, 30))
+
+        for i, layer in enumerate(layers_to_draw):
+            depth_factor = layer.parallax - focal_parallax
+            layer_shift = depth_factor * self.stereo_separation
+
+            self.main_camera.x = original_cam_x - (layer_shift / 2)
+            layer.render(self._left_buffer, self.main_camera)
+
+            for renderable in self.renderables.get(i, []):
+                self.main_camera.x = original_cam_x
+                renderable.render(self._left_buffer, self.main_camera)
+                self.main_camera.x = original_cam_x - (layer_shift / 2)
+
+        self._right_buffer.fill((20, 20, 30))
+
+        for i, layer in enumerate(layers_to_draw):
+            depth_factor = layer.parallax - focal_parallax
+            layer_shift = depth_factor * self.stereo_separation
+
+            self.main_camera.x = original_cam_x + (layer_shift / 2)
+            layer.render(self._right_buffer, self.main_camera)
+
+            for renderable in self.renderables.get(i, []):
+                self.main_camera.x = original_cam_x
+                renderable.render(self._right_buffer, self.main_camera)
+                self.main_camera.x = original_cam_x + (layer_shift / 2)
+
+        left_view = pygame.transform.scale(self._left_buffer, (half_w, h))
+        right_view = pygame.transform.scale(self._right_buffer, (half_w, h))
+
+        render_target.blit(left_view, (0, 0))
+
+        render_target.blit(right_view, (half_w, 0))
 
         self.main_camera.x = original_cam_x
 
@@ -807,6 +858,9 @@ class Scene:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_g:
                 self.anaglyph_mode = not self.anaglyph_mode
                 flag("Activated Anaglyph 3d mode")
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_f:
+                self.sbs_mode = not self.sbs_mode
+                flag("Activated SBS 3d mode")
 
             for layer in self.layers:  # TODO: This can be probably optimized
                 if hasattr(layer, 'process_events'):
@@ -827,6 +881,8 @@ class Scene:
 
         if self.anaglyph_mode:
             self._render_anaglyph(self.screen, self.layers, self.particle_emitters)
+        elif self.sbs_mode:
+            self._render_sbs(self.screen, self.layers, self.particle_emitters)
         else:
             self.screen.fill((20, 20, 30))
 
