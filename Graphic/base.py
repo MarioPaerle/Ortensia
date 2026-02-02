@@ -884,7 +884,7 @@ class Scene:
         elif self.sbs_mode:
             self._render_sbs(self.screen, self.layers, self.particle_emitters)
         else:
-            self.screen.fill((20, 20, 30))
+            self.screen.fill((17, 13, 38))
 
             for i, layer in enumerate(self.layers):
                 if self.particle_layer_idx != -1 and self.particle_layer_idx == i:
@@ -911,7 +911,6 @@ class Scene:
 if __name__ == "__main__":
     def s(x):
         return int(x * 1)
-
 
     game = Scene(s(1000), s(600), flag=pygame.SCALED | pygame.RESIZABLE)
     bg2 = game.add_create_layer("Background2", 0.2)

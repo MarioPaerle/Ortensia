@@ -9,7 +9,7 @@ if __name__ == '__main__':
     level = WorldLevel(game)
     level.register_blocks(BLOCKS)
     game.addscene(level, '1')
-    level.stereo_separation = 55
+    level.stereo_separation = 50
     #######################################################
     """bg1 = level.add_create_layer("bg1", parallax=0.001)
     bg2 = level.add_create_layer("bg2", parallax=0.005)
@@ -17,12 +17,14 @@ if __name__ == '__main__':
     bg4 = level.add_create_layer("bg4", parallax=0.05)
     bg5 = level.add_create_layer("bg5", parallax=0.1)
     bg6 = level.add_create_layer("bg6", parallax=1.2)"""
-    bg1 = level.add_create_layer("bg1", parallax=0.05)
-    bg2 = level.add_create_layer("bg2", parallax=0.1)
-    bg3 = level.add_create_layer("bg2", parallax=0.2)
-    bg4 = level.add_create_layer("bg2", parallax=0.5)
-    bg5 = level.add_create_layer("bg5", parallax=0.7)
-    bg6 = level.add_create_layer("bg6", parallax=0.8)
+
+    bg1 = level.add_create_layer("bg1", 0.001)
+    bg2 = level.add_create_layer("bg2", 0.005)
+    bg3 = level.add_create_layer("bg3", 0.05)
+    bg4 = level.add_create_layer("bg4", 0.1)
+    bg5 = level.add_create_layer("bg5", 0.3)
+
+    # bg6 = level.add_create_layer("bg6", parallax=0.8)
     uilayer = UILayer(parallax=0)
     fg = LitLayer("Foreground", 1, ambient_color=(255, 255, 255))
     # fg2 = level.add_create_layer("Particles", parallax=1.2)
@@ -35,7 +37,7 @@ if __name__ == '__main__':
 
     add_plane(map, 0, 10, 300, 1, block=level.registered_blocks['_Death'])
 
-    bg1.add_static(
+    """bg1.add_static(
         Sprite(-0, -80, 2304 // 2, 1396 // 2, (40, 40, 80), texture='assets/textures/backgrounds/Clouds 6/1.png',
                alpha=True))
     bg2.add_dynamic(
@@ -83,7 +85,7 @@ if __name__ == '__main__':
         speed=0.0001,
         distance=15,
         vertical=False
-    ))
+    ))"""
 
     player = Player(50, 200, 24, 64, level=level, cw=16, coffset_x=23, coffset_y=-6)
 
@@ -92,12 +94,14 @@ if __name__ == '__main__':
     fg.sprites.append(player)
     level.add_player(player)
 
-    # loader = LevelDataSystem(level)
-    # loader.load_decorations("saves/level_decor_data.json")
+    loader = LevelDataSystem(level)
+    loader.load_decorations("saves/level_decor_data.json")
 
-    """emitter = FireflyEmitter()
+    """
+    emitter = FireflyEmitter()
     fg2.emitters.append(emitter)
-    level.updatables.append(emitter)"""
+    level.updatables.append(emitter)
+    """
     # level.particle_emitters.append(emitter)
     # level.update_call = lambda : emitter.emit(300, 500, amount=100)
 

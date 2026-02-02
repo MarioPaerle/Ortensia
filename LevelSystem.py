@@ -14,7 +14,7 @@ class LevelDataSystem:
 
         # Itera su tutti i layer registrati nel livello
         for layer in self.level.layers:
-            # Saltiamo i layer UI o quelli non pertinenti
+            # Saltiamo i layer UI
             if isinstance(layer, (Layer, ChunkedLayer, LitLayer)) and layer.name != "UI":
                 layer_data = {
                     "name": layer.name,
@@ -23,29 +23,30 @@ class LevelDataSystem:
                     "sprites": []
                 }
 
-                # Raccogli gli sprite statici (o dinamici se serve)
-                # Nota: qui assumiamo che tu voglia salvare solo gli oggetti decorativi
-                # e non il Player o i Blocchi (che sono gestiti dal BlockMap)
-                sprites_to_save = layer.sprites
-                if hasattr(layer, 'large_sprites'):  # Supporto per ChunkedLayer
-                    sprites_to_save = sprites_to_save + layer.large_sprites
-
-                # Se usi i chunk, dovresti iterare anche su self.chunks,
-                # ma per un editor semplice conviene tenere una lista "editabile" a parte
-                # o iterare tutto. Per ora semplifichiamo sugli sprite diretti.
+                # Raccogli gli sprite (supporta sia liste normali che chunked/large)
+                sprites_to_save = []
+                if hasattr(layer, 'sprites'):
+                    sprites_to_save.extend(layer.sprites)
+                if hasattr(layer, 'large_sprites'):
+                    sprites_to_save.extend(layer.large_sprites)
+                # Nota: Se usi i chunk attivi, dovresti iterare anche su layer.chunks.values()
 
                 for sprite in sprites_to_save:
-                    # Ignoriamo il Player o entità generate dal codice
-                    if hasattr(sprite, 'is_decoration') and sprite.is_decoration:
+                    # Salviamo solo se è marcato come decorazione o ha un path texture
+                    if (hasattr(sprite, 'is_decoration') and sprite.is_decoration) or \
+                            (hasattr(sprite, 'texture_path') and sprite.texture_path):
+
                         sprite_data = {
                             "x": sprite.x,
                             "y": sprite.y,
-                            "texture": sprite.texture_path,  # Devi assicurarti che lo sprite ricordi il path
-                            "width": sprite.width,
-                            "height": sprite.height,
+                            "w": sprite.width,
+                            "h": sprite.height,
+                            "texture": getattr(sprite, 'texture_path', None),
                             "class": sprite.__class__.__name__
                         }
-                        layer_data["sprites"].append(sprite_data)
+                        # Salva solo se ha una texture valida
+                        if sprite_data["texture"]:
+                            layer_data["sprites"].append(sprite_data)
 
                 data.append(layer_data)
 
@@ -54,50 +55,60 @@ class LevelDataSystem:
         print(f"Livello decorativo salvato in {filename}")
 
     def load_decorations(self, filename):
-        """Carica i layer e gli sprite da JSON."""
-        with open(filename, 'r') as f:
-            data = json.load(f)
+        """Carica i layer e gli sprite da JSON applicando la SCALA corretta."""
+        try:
+            with open(filename, 'r') as f:
+                data = json.load(f)
+        except FileNotFoundError:
+            print(f"File {filename} non trovato.")
+            return
 
         for layer_conf in data:
-            # 1. Crea o Trova il Layer esistente
-            # Se il layer esiste già nel main (es. 'fg'), usiamo quello, altrimenti lo creiamo
+            # 1. Trova o Crea il Layer
             existing_layer = next((l for l in self.level.layers if l.name == layer_conf['name']), None)
 
             if existing_layer:
                 current_layer = existing_layer
                 current_layer.parallax = layer_conf['parallax']
             else:
-                # Creazione dinamica se non esiste
                 if layer_conf['type'] == "LitLayer":
                     current_layer = LitLayer(layer_conf['name'], layer_conf['parallax'])
                 else:
+                    # Default a ChunkedLayer o Layer standard
                     current_layer = ChunkedLayer(layer_conf['name'], layer_conf['parallax'])
                 self.level.add_layer(current_layer)
 
             # 2. Popola gli sprite
             for s_conf in layer_conf['sprites']:
-                if s_conf['class'] == 'WigglingSprite':
+                # Supporto per vecchi salvataggi: cerca 'w' oppure 'width'
+                w = s_conf.get('w', s_conf.get('width', 64))
+                h = s_conf.get('h', s_conf.get('height', 64))
+                texture = s_conf.get('texture')
+                cls = s_conf.get('class', 'Sprite')
+
+                # Creazione Sprite
+                if cls == 'WigglingSprite':
                     sprite = WigglingSprite(
-                        x=s_conf['x'], y=s_conf['y'],
-                        w=s_conf['w'], h=s_conf['h'],
-                        texture=s_conf['texture'],
-                        alpha=True  # O leggi dal json
-                        # Aggiungi parametri specifici se salvati
+                        x=s_conf['x'] + 1000 * current_layer.parallax, y=s_conf['y'] + 120 * current_layer.parallax,
+                        w=w, h=h,
+                        texture=texture,
+                        alpha=True
                     )
                 else:
                     sprite = Sprite(
-                        s_conf['x'], s_conf['y'],
-                        s_conf['w'], s_conf['h'],
-                        (255, 255, 255),  # Colore dummy
-                        texture=s_conf['texture'],
+                        s_conf['x'] + 1000 * current_layer.parallax, s_conf['y'] + 120 * current_layer.parallax,
+                        w, h,
+                        (255, 255, 255),
+                        texture=texture,
                         alpha=True
                     )
 
-                # Flag essenziale per distinguerli dagli oggetti di gioco
+                # Impostazioni post-creazione
                 sprite.is_decoration = True
-                sprite.texture_path = s_conf['texture']  # Salviamo il path per il prossimo salvataggio
+                sprite.texture_path = texture  # Importante per ri-salvare
 
-                if hasattr(current_layer, 'add_dynamic') and s_conf['class'] == 'WigglingSprite':
+                # Aggiunta al layer
+                if hasattr(current_layer, 'add_dynamic') and cls == 'WigglingSprite':
                     current_layer.add_dynamic(sprite)
                 elif hasattr(current_layer, 'add_static'):
                     current_layer.add_static(sprite)

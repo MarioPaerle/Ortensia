@@ -3,7 +3,7 @@ import os
 from world_blocks import Deathblock
 from Graphic.functions import *
 
-names = os.listdir('assets/textures/blocks')
+names = [o for o in os.listdir('assets/textures/blocks') if o.endswith('.png')]
 print(names)
 RAPIDBLOCKS = {
     n: Block(40, 40, n, texture=f'assets/textures/blocks/{n}',

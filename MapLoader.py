@@ -13,7 +13,8 @@ OUTPUT_FILE = "saves/Test/-blockmap.json"
 
 COLOR_MAP = {
     (0, 0, 0): "_None",  # Black = Empty/Air (or just skip it)
-    (100, 100, 100): "glass.png",  # Gray = Stone
+    (100, 100, 100): "deepslate2.png",  # Gray = Stone
+    (100, 100, 170): "BlueOrtensia.png",
     (255, 0, 0): "_Death",  # Red = Death Block
 }
 
