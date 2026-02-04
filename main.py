@@ -12,28 +12,20 @@ if __name__ == '__main__':
     game.addscene(level, '1')
     level.stereo_separation = 50
     #######################################################
-    """bg1 = level.add_create_layer("bg1", parallax=0.001)
-    bg2 = level.add_create_layer("bg2", parallax=0.005)
-    bg3 = level.add_create_layer("bg3", parallax=0.01)
-    bg4 = level.add_create_layer("bg4", parallax=0.05)
-    bg5 = level.add_create_layer("bg5", parallax=0.1)
-    bg6 = level.add_create_layer("bg6", parallax=1.2)"""
-
     bg1 = level.add_create_layer("bg1", 0, layertype=Layer)
     bg2 = level.add_create_layer("bg2", 0.005, layertype=Layer)
     bg3 = level.add_create_layer("bg3", 0.01, layertype=Layer)
     bg4 = level.add_create_layer("bg4", 0.08, layertype=Layer)
     bg5 = level.add_create_layer("bg5", 0.25, layertype=Layer)
 
-    # bg6 = level.add_create_layer("bg6", parallax=0.8)
     uilayer = UILayer(parallax=0)
-    deco_back = ChunkedLayer("DecoBack", parallax=1.0)
-    fg = ShadedChunkedLayer("Foreground", 1)
+    deco_back = LitLayer("DecoBack", parallax=1.0, ambient_color=(80, 80, 130))
+    fg = ChunkedLayer("Foreground", 1)
     deco_front = ChunkedLayer("DecoFront", parallax=1.0)
 
-    # level.add_layer(deco_back)
+    level.add_layer(deco_back)
     level.add_layer(fg)
-    # level.add_layer(deco_front)
+    level.add_layer(deco_front)
     level.add_layer(uilayer)
     #######################################################
     map = BlockMap(level, layers={
@@ -41,28 +33,23 @@ if __name__ == '__main__':
         'middle': fg,
         'front': deco_front,
     })
+
     level.set_map(map)
-
-    # add_plane(map, 0, 10, 300, 1, block=level.registered_blocks['_Death'])
-
     player = Player(50, 200, 24, 64, level=level, cw=16, coffset_x=23, coffset_y=-6)
 
-    player.add_animation('walk',
-                         load_horizontal_spritesheet("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1)))
+    player.add_animation('walk_right',
+                         load_horizontal_spritesheet("assets/animations/Aury/AuryRunning.png", 64, 64, row=0, scale=(1, 1)))
+    player.add_animation('walk_left',
+                         load_horizontal_spritesheet("assets/animations/Aury/AuryRunning.png", 64, 64, row=0, scale=(1, 1), flipx=True))
+    player.add_animation('jump_right',
+                         load_horizontal_spritesheet("assets/animations/Aury/aury_jumping.png", 64, 64, row=0, scale=(1.2, 1.2)))
+    player.add_animation('jump_left',
+                         load_horizontal_spritesheet("assets/animations/Aury/aury_jumping.png", 64, 64, row=0, scale=(1.2, 1.2), flipx=True))
     fg.sprites.append(player)
     level.add_player(player)
 
     loader = LevelDataSystem(level)
     loader.load_decorations("saves/level_decor_data.json")
-
-    """
-    emitter = FireflyEmitter()
-    fg2.emitters.append(emitter)
-    level.updatables.append(emitter)
-    """
-    # level.particle_emitters.append(emitter)
-    # level.update_call = lambda : emitter.emit(300, 500, amount=100)
-
     menu_button = UIButton(10, 20, text="Menù", width=100, height=40)
     menu_button.on_click = lambda: game.set_scene('0')
     menu_button2 = UIButton(10, 60, text="Save", width=100, height=40)
@@ -86,3 +73,5 @@ if __name__ == '__main__':
 
     while game.state == 0:
         game.update()
+
+

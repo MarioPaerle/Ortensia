@@ -6,6 +6,7 @@ from Graphic.functions import load_horizontal_spritesheet
 import random
 import math
 
+
 class Sprite:
     def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False):
         self.x, self.y, self.width, self.height = x, y, w, h
@@ -408,6 +409,7 @@ class Block(SolidSprite):
             light_emission_color=(255, 255, 255),
             gravity=980,
             max_fall_speed=1000,
+            name = "Generic Block"
     ):
         super().__init__(
             -100,
@@ -421,7 +423,7 @@ class Block(SolidSprite):
 
         # Identity
         self.id = id
-        self.name = "Generic Block"
+        self.name = name
 
         self.emitter = emitter
         self.physics_block = physics
@@ -431,11 +433,9 @@ class Block(SolidSprite):
         self.stickyness = stickyness
         self.hardness = hardness
 
-        # Lighting
         self.light_emission_intensity = light_emission_intensity
         self.light_emission_color = light_emission_color
 
-        # Physics state
         self.velocity_y = 0.0
         self.gravity = gravity
         self.is_grounded = False
@@ -499,7 +499,13 @@ class Block(SolidSprite):
 
         return moved
 
+    def update(self, dt):
+        pass
+
     def on_touch(self, other, dt=1):
+        pass
+
+    def on_click(self, other, dt=1):
         pass
 
     def __repr__(self):

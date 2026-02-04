@@ -20,7 +20,7 @@ def flag(message, level=1):
         print(f"{RED}|Error|: {message}{RES}")
 
 
-def load_horizontal_spritesheet(filename, frame_w, frame_h, row='all', scale=(1, 1)):
+def load_horizontal_spritesheet(filename, frame_w, frame_h, row='all', scale=(1, 1), flipx=False, flipy=False):
     sheet = pygame.image.load(filename).convert_alpha()
     frames = []
 
@@ -33,9 +33,8 @@ def load_horizontal_spritesheet(filename, frame_w, frame_h, row='all', scale=(1,
         for x in range(0, sheet.get_width(), frame_w):
             frame = sheet.subsurface(pygame.Rect(x, row * frame_h, frame_w, frame_h))
             frames.append(frame)
-
-    return [pygame.transform.scale_by(f, factor=scale) for f in frames]
-
+    fframes = [pygame.transform.flip(pygame.transform.scale_by(f, factor=scale), flipx, flipy) for f in frames]
+    return fframes
 
 def load_vertical_spritesheet(filename, frame_w, frame_h, col='all', scale=(1, 1)):
     sheet = pygame.image.load(filename).convert_alpha()

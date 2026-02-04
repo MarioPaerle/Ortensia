@@ -120,8 +120,8 @@ class Engine(Scene):
 
         fps = self.clock.get_fps()
         # apply_lut(self.screen, self.lut)
-        add_grain(self.screen, 10, dynamic=True)
-        add_vignette(self.screen, 0.33)
+        # add_grain(self.screen, 10, dynamic=True)
+        # add_vignette(self.screen, 0.33)
         pygame.display.set_caption(f"{self.name} | FPS: {int(fps)}")
         pygame.display.flip()
 
@@ -153,10 +153,40 @@ class Player(AnimatedSolidSprite):
 
         self.SPEED_X = 200
         self.JUMP_FORCE = 260
-        self.def_GRAVITY = 620
-        self.GRAVITY = self.def_GRAVITY
+
+        # --- GRAVITY SETTINGS (Celeste Style) ---
+        self.GRAVITY_RISE = 620  # Standard gravity when going up
+        self.GRAVITY_FALL = 800  # Heavier gravity when falling
+        self.GRAVITY = self.GRAVITY_RISE
+
         self.FLYING = False
         self.mode = 0
+
+        # --- JUMP BUFFER & AUTOJUMP ---
+        self.jump_buffer_timer = 0.0
+        self.JUMP_BUFFER_DURATION = 0.15  # 150ms forgiveness window
+        self.prev_space_state = False
+
+        # --- CLICK COOLDOWN ---
+        self.click_cooldown_timer = 0.0
+        self.CLICK_COOLDOWN_DURATION = 0.2
+
+        # --- DASH & MOVEMENT STATE ---
+        self.facing_right = True
+        self.is_dashing = False
+        self.dash_timer = 0.0
+        self.dash_cooldown_timer = 0.0
+
+        self.DASH_SPEED = 600
+        self.DASH_DURATION = 0.13
+        self.DASH_COOLDOWN = 0.6
+        self.DOUBLE_TAP_WINDOW = 250  # ms
+
+        # Tap detection
+        self.last_tap_time = 0
+        self.last_tap_key = None
+        self.prev_key_a = False
+        self.prev_key_d = False
 
     def die(self, message=''):
         "Die animations and modalitiea"
@@ -171,7 +201,20 @@ class Player(AnimatedSolidSprite):
         if self.mode == 0:
             self.life -= quantity
 
-    def physics(self, dt, dx, dy=0):
+    def physics(self, dt, dx, dy=0, holding_jump=False):
+        # Apply Gravity based on vertical velocity state (Celeste feel)
+        # We disable gravity if we are Flying OR Dashing
+        if not self.FLYING and not self.is_dashing:
+            if self.vy > 0 and holding_jump:
+                self.GRAVITY = self.GRAVITY_RISE
+            else:
+                if holding_jump:
+                    self.GRAVITY = self.GRAVITY_RISE
+                else:
+                    self.GRAVITY = self.GRAVITY_FALL
+        elif self.is_dashing:
+            self.GRAVITY = 0
+
         self.vy += self.GRAVITY * dt
         dy = self.vy * dt + dy
 
@@ -193,68 +236,161 @@ class Player(AnimatedSolidSprite):
     def switch_mode(self):
         if self.mode == 0:
             self.mode = 1
-            # self.GRAVITY = 0
         else:
             self.mode = 0
-            self.GRAVITY = self.def_GRAVITY
+            self.GRAVITY = self.GRAVITY_RISE
+            self.FLYING = False
+            self.is_dashing = False
 
     def mechaniches(self, keys, dt):
+        # Update Timers
+        if self.jump_buffer_timer > 0:
+            self.jump_buffer_timer -= dt
+        if self.click_cooldown_timer > 0:
+            self.click_cooldown_timer -= dt
+        if self.dash_cooldown_timer > 0:
+            self.dash_cooldown_timer -= dt
+
+        curr_time_ms = pygame.time.get_ticks()
+
+        # --- DOUBLE TAP DASH DETECTION ---
+        # Detect Rising Edge for 'A'
+        if keys[pygame.K_a] and not self.prev_key_a:
+            if self.last_tap_key == 'a' and (curr_time_ms - self.last_tap_time) < self.DOUBLE_TAP_WINDOW:
+                if self.dash_cooldown_timer <= 0 and self.mode == 0:  # Only dash in survival/normal mode
+                    self.is_dashing = True
+                    self.dash_timer = self.DASH_DURATION
+                    self.dash_cooldown_timer = self.DASH_COOLDOWN
+                    self.facing_right = False
+            self.last_tap_key = 'a'
+            self.last_tap_time = curr_time_ms
+        self.prev_key_a = keys[pygame.K_a]
+
+        # Detect Rising Edge for 'D'
+        if keys[pygame.K_d] and not self.prev_key_d:
+            if self.last_tap_key == 'd' and (curr_time_ms - self.last_tap_time) < self.DOUBLE_TAP_WINDOW:
+                if self.dash_cooldown_timer <= 0 and self.mode == 0:
+                    self.is_dashing = True
+                    self.dash_timer = self.DASH_DURATION
+                    self.dash_cooldown_timer = self.DASH_COOLDOWN
+                    self.facing_right = True
+            self.last_tap_key = 'd'
+            self.last_tap_time = curr_time_ms
+        self.prev_key_d = keys[pygame.K_d]
+
+        # --- MOVEMENT CALCULATION ---
         current_vx = 0
         dy = 0
-        if keys[pygame.K_a]:  current_vx -= self.SPEED_X
-        if keys[pygame.K_d]: current_vx += self.SPEED_X
 
-        if keys[pygame.K_SPACE] and self.on_floor:
-            self.vy = -self.JUMP_FORCE
+        if self.is_dashing:
+            # Dash Logic
+            self.dash_timer -= dt
+            if self.dash_timer <= 0:
+                self.is_dashing = False
+                self.vy = 0  # Stop vertical momentum after dash
+            else:
+                current_vx = self.DASH_SPEED if self.facing_right else -self.DASH_SPEED
+                self.vy = 0  # Lock Y axis
+        else:
+            # Normal Movement
+            if keys[pygame.K_a]:
+                current_vx -= self.SPEED_X
+                self.facing_right = False
+            if keys[pygame.K_d]:
+                current_vx += self.SPEED_X
+                self.facing_right = True
 
-        elif keys[pygame.K_w] and self.mode == 1 and (not self.on_floor or self.FLYING):
-            self.FLYING = True
-            self.vy = 0
-            dy = -300 * dt
+        # --- JUMP LOGIC ---
+        if not self.is_dashing:
+            # 1. Update Buffer
+            if keys[pygame.K_SPACE] and not self.prev_space_state:
+                self.jump_buffer_timer = self.JUMP_BUFFER_DURATION
+            self.prev_space_state = keys[pygame.K_SPACE]
 
-        if keys[pygame.K_s] and self.mode == 1:
-            dy = 300 * dt
+            # 2. Determine Intent
+            wants_to_jump = (self.jump_buffer_timer > 0) or keys[pygame.K_SPACE]
 
-        if keys[pygame.K_q]:  self.level.main_camera.apply_zoom(0.5 * dt)
-        if keys[pygame.K_e]:  self.level.main_camera.apply_zoom(-0.5 * dt)
+            # 3. Execute Jump
+            if self.on_floor and wants_to_jump:
+                self.vy = -self.JUMP_FORCE
+                self.jump_buffer_timer = 0
 
+                # Flying Logic
+            elif keys[pygame.K_w] and self.mode == 1 and (not self.on_floor or self.FLYING):
+                self.FLYING = True
+                self.vy = 0
+                dy = -300 * dt
+            if keys[pygame.K_s] and self.mode == 1:
+                dy = 300 * dt
+
+        # Handle Flying Gravity Override
         if self.FLYING:
             self.GRAVITY = 0
-        else:
-            self.GRAVITY = self.def_GRAVITY
         if self.FLYING and self.on_floor:
             self.FLYING = False
 
+        # Physics Step
         dx = current_vx * dt
-        self.physics(dt, dx, dy)
+        self.physics(dt, dx, dy, holding_jump=keys[pygame.K_SPACE])
 
-        if dx != 0:
+        # Animations
+        if self.is_dashing:
             self.set_state("walk")
+        elif keys[pygame.K_SPACE] and dx > 0:
+            self.set_state("jump_right")
+        elif keys[pygame.K_SPACE] and dx < 0:
+            self.set_state("jump_left")
+        elif dx > 0:
+            self.set_state("walk_right")
+        elif dx < 0:
+            self.set_state("walk_left")
         else:
             self.set_state("idle")
 
         self.update_animation(dt)
+
+        # --- MOUSE INTERACTION (With Cooldown) ---
         ms = self.level.map_system
         mouse_buttons = pygame.mouse.get_pressed()
         mx, my = pygame.mouse.get_pos()
+
         distance = ms.get_grid_distance2(self.pos(), (mx, my))
+
         if distance < 4 or self.mode == 1:
             ms.placer_light(mx, my, color=(255, 255, 255))
-            if mouse_buttons[0]:
-                block = self.slotbar.get_and_use_selected(consume=(1 if self.mode == 0 else 0))
-                if block.id is not '_None':
-                    ms.place_tile(mx, my, block=block)
-                    self.level.refresh_grid()
 
-            if mouse_buttons[2]:
-                ms.remove_tile(mx, my)
-                self.level.refresh_grid()
+            if hasattr(ms, 'get_tile'):
+                clicked = ms.get_tile(mx, my)
+            else:
+                clicked = ms._waila_lookup(mx, my)
+
+            if self.click_cooldown_timer <= 0:
+                action_performed = False
+
+                if mouse_buttons[2]:
+                    if clicked is None:
+                        block = self.slotbar.get_and_use_selected(consume=(1 if self.mode == 0 else 0))
+                        if block.id != '_None':
+                            ms.place_tile(mx, my, block=block)
+                            self.level.refresh_grid()
+                            action_performed = True
+                    else:
+                        clicked.on_click(self)
+                        action_performed = True
+
+                if mouse_buttons[0]:
+                    ms.remove_tile(mx, my)
+                    self.level.refresh_grid()
+                    action_performed = True
+
+                if action_performed:
+                    self.click_cooldown_timer = self.CLICK_COOLDOWN_DURATION
+
         else:
             ms.placer_light(mx, my, color=(180, 20, 20))
 
         if self.life <= 0:
             self.die('Player Dead')
-
         elif self.y > 1300:
             self.die('Player Exceeded world minimum, felt into the void')
 
@@ -283,7 +419,6 @@ class Player(AnimatedSolidSprite):
         x = datas['x']
         y = datas['y']
         self.setpos(x, y)
-        # self.slotbar.slots = [[level.registered_blocks[d], k] for d, k in datas['slotbar']]
         self.slotbar.render_bar()
 
 
@@ -301,7 +436,7 @@ class SlotBar(UIElement):
         self.padding = padding
         self.selected_index = 0
 
-        self.slots = [] # [[a, 1] for a in list(level.registered_blocks.values())[:slot_count]]
+        self.slots = []  # [[a, 1] for a in list(level.registered_blocks.values())[:slot_count]]
         # self.slots[0] = [level.registered_blocks['Fire'], 64]
 
         while len(self.slots) < slot_count:
@@ -417,9 +552,8 @@ class WorldLevel(Scene):
 
         for point in self.map_system.data['middle']:
             if 'spawnpoint.png' == self.map_system.data['middle'][point].id:
-                self.spawnpoint = point[0]*self.map_system.tile_size, point[1]*self.map_system.tile_size
+                self.spawnpoint = point[0] * self.map_system.tile_size, point[1] * self.map_system.tile_size
                 flag(f"Set Spawnpoint at {point}")
-
 
     def register_blocks(self, blocks: dict):
         self.registered_blocks = blocks
@@ -427,9 +561,15 @@ class WorldLevel(Scene):
             if isinstance(self.registered_blocks[block], AnimatedBlock):
                 self.updatables.append(self.registered_blocks[block])
 
+    def callback(self, game):
+        return
+        add_grain(self.screen, 6, dynamic=True)
+        add_vignette(self.screen, 0.3)
+
     def update(self):
         self.update_call()
-        super().update()
+
+        super().update(execute=self.callback)
 
 
 import os
@@ -578,7 +718,7 @@ if __name__ == "__main__":
 
     player = Player(s(400), s(300), s(64), s(64), level=game, cw=16, coffset_x=23, coffset_y=-6)
     # player.add_animation('walk', load_spritesheet("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1)))
-    walk_loader = AnimationLoader("Graphic/examples/AuryRunning.png", 64, 64, row=0, scale=(1, 1))
+    walk_loader = AnimationLoader("assets/animations/Aury/AuryRunning.png", 64, 64, row=0, scale=(1, 1))
     player.add_animation('walk', walk_loader)
     player.show_hitboxes = True
     fg.sprites.append(player)

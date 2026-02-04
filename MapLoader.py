@@ -1,21 +1,28 @@
 import json
 from PIL import Image  # Requires: pip install pillow
+import random
 
 # ================= CONFIGURATION =================
 
 # Input image path
-INPUT_IMAGE = "my_level_des2.png"
+INPUT_IMAGE = "my_level_design.png"
 
 
-OUTPUT_FILE = "saves/Test/-blockmap_front.json"
+OUTPUT_FILE = "saves/Test/-blockmap_middle.json"
 
 
 COLOR_MAP = {
     (0, 0, 0): "_None",
-    (255, 255, 255): "spawnpoint.png",
+    (255, 255, 255): "_Light1",
+    (255, 255, 0): "HighStainedGlass",
     (100, 100, 100): "deepslate2.png",
+    (50, 50, 50): "deepslate_down.png",
+    (25, 25, 25): "black.png",
     (100, 100, 170): "BlueOrtensia.png",
     (255, 0, 0): "_Death",
+    (0, 255, 0): ["pebble1.png", "pebble2.png", "pebble3.png", "pebble4.png"],
+    (50, 100, 100): ["deepslate_broken1.png", "deepslate_broken2.png", "deepslate_broken3.png"],
+    (255, 0, 220): 'Chest'
 }
 
 
@@ -33,7 +40,10 @@ def convert_map():
             pixel = img.getpixel((x, y))
 
             if pixel in COLOR_MAP:
-                block_id = COLOR_MAP[pixel]
+                if isinstance(COLOR_MAP[pixel], list):
+                    block_id = random.choice(COLOR_MAP[pixel])
+                else:
+                    block_id = COLOR_MAP[pixel]
 
                 if block_id == "_None":
                     continue

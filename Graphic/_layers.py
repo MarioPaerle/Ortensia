@@ -584,9 +584,9 @@ class BlockMap:
 
         self.depth_effects = {
             'front_fade': True,
-            'back_desaturate': True,
-            'back_darken': True,
-            'front_shadow': True,
+            'back_desaturate': False,
+            'back_darken': False,
+            'front_shadow': False,
             'back_blur': False,
         }
 
@@ -623,7 +623,9 @@ class BlockMap:
         rl = self._layer(layer_name)
         if block.light_emission_intensity > 0 and isinstance(rl, LitLayer) and not block.physics_block:
             self.lights[layer_name][(gx, gy)] = rl.add_light(
-                LightSource(world_x, world_y, radius=200, color=block.light_emission_color, falloff=0.99, steps=200))
+                LightSource(world_x, world_y,
+                            radius=block.light_emission_intensity*100,
+                            color=block.light_emission_color, falloff=0.99, steps=200))
         if block.light_emission_intensity > 0 and isinstance(rl, LitLayer) and block.physics_block:
             flag("Light Emitting Blocks do not support Physics as for now", level=2)
 
@@ -655,6 +657,15 @@ class BlockMap:
         layer_name = layer_name or self.active_layer
         gx, gy = self.get_grid_pos(screen_x, screen_y, layer_name)
         self.del_tile(gx, gy, layer_name)
+
+    def has_tile(self, screen_x, screen_y, layer_name=None):
+        l = layer_name if layer_name is not None else 'middle'
+        return True if self.data[l].get(self.get_grid_pos(screen_x, screen_y, layer_name=l), None) is not None else False
+
+    def get_tile(self, screen_x, screen_y, layer_name=None):
+        l = layer_name if layer_name is not None else 'middle'
+        return self.data[l].get(self.get_grid_pos(screen_x, screen_y, layer_name=l),
+                                        None)
 
     def del_tile(self, gx, gy, layer_name=None):
         layer_name = layer_name or self.active_layer
@@ -746,50 +757,6 @@ class BlockMap:
 
         surface.blit(panel, (draw_x, draw_y))
 
-    def __init__(self, level, layers: dict, tile_size=40):
-        """
-        layers = {
-            'back':   <ChunkedLayer or LitLayer>,
-            'middle': <LitLayer>,
-            'front':  <ChunkedLayer or LitLayer>,
-        }
-        """
-        self.level = level
-        self.tile_size = tile_size
-        self.render_layers = layers
-
-        self.data = {k: {} for k in LAYER_ORDER}
-        self.lights = {k: {} for k in LAYER_ORDER}
-        self.physics_blocks = {k: [] for k in LAYER_ORDER}
-
-        self.hover_timer = 0.0
-        self.hover_default_color = (190, 190, 255)
-        self.hover_color = (190, 190, 255)
-        self.cursor_gx = 0
-        self.cursor_gy = 0
-        self.active_layer = LAYER_MID
-
-        self._waila_target = None
-        self._waila_alpha = 0.0
-        self._waila_offset_x = 0.0
-        self._waila_target_alpha = 0.0
-        self._waila_target_offset = 0.0
-        self._waila_font_name = None
-        self._waila_font_desc = None
-        self._waila_surf = None
-
-        self.depth_effects = {
-            'front_fade': True,
-            'back_desaturate': True,
-            'back_darken': True,
-            'front_shadow': True,
-            'back_blur': False,
-        }
-
-        self._shadow_surf_cache = {}
-
-    # ... (all other methods stay the same until update) ...
-
     def update(self, dt, mouse_pos=None):
         self.hover_timer += dt * 2.5
 
@@ -848,7 +815,7 @@ class BlockMap:
             dist = math.sqrt((player_cx - block_cx) ** 2 + (player_cy - block_cy) ** 2)
 
             if dist < fade_distance:
-                target_alpha = int(80 + (dist / fade_distance) * 175)
+                target_alpha = int(160 + (dist / fade_distance) * 95)
             else:
                 target_alpha = 255
 
@@ -893,7 +860,7 @@ class BlockMap:
 
         shadow = pygame.Surface((width + 8, height + 8), pygame.SRCALPHA)
         for i in range(4):
-            alpha = 40 - i * 8
+            alpha = 100
             offset = i * 2
             pygame.draw.rect(shadow, (0, 0, 0, alpha),
                              (offset, offset, width, height), border_radius=2)
@@ -905,7 +872,7 @@ class BlockMap:
         cam_x = camera.x * self._layer(self.active_layer).parallax
         cam_y = camera.y * self._layer(self.active_layer).parallax
 
-        if self.depth_effects['front_shadow'] and hasattr(self.level, 'player'):
+        if self.depth_effects['front_shadow']:
             self._render_front_shadows(surface, camera)
 
         rect_x = (self.cursor_gx * self.tile_size) - cam_x
@@ -919,25 +886,25 @@ class BlockMap:
         surface.blit(cursor_surf, (rect_x, rect_y))
 
     def _render_front_shadows(self, surface, camera):
-        cam_x = camera.x * self._layer(LAYER_FRONT).parallax
-        cam_y = camera.y * self._layer(LAYER_FRONT).parallax
+        cam_x = camera.x * self._layer(LAYER_MID).parallax
+        cam_y = camera.y * self._layer(LAYER_MID).parallax
 
         player = self.level.player
         player_cy = player.y + player.height / 2
 
-        for (gx, gy), sprite in self.data[LAYER_FRONT].items():
+        for (gx, gy), sprite in self.data[LAYER_MID].items():
             block_cy = sprite.y + sprite.height / 2
+            if (gx-1, gy) in self.data[LAYER_BACK]:
+                if block_cy < player_cy:
+                    shadow = self._create_shadow(sprite.width, sprite.height)
+                    sx = sprite.x - cam_x - 4
+                    sy = sprite.y - cam_y - 4
 
-            if block_cy < player_cy:
-                shadow = self._create_shadow(sprite.width, sprite.height)
-                sx = sprite.x - cam_x - 4
-                sy = sprite.y - cam_y - 4
+                    current_alpha = getattr(sprite, '_current_alpha', 255)
+                    shadow_alpha = int((current_alpha / 255) * 0.8 * 255)
+                    shadow.set_alpha(shadow_alpha)
 
-                current_alpha = getattr(sprite, '_current_alpha', 255)
-                shadow_alpha = int((current_alpha / 255) * 0.8 * 255)
-                shadow.set_alpha(shadow_alpha)
-
-                surface.blit(shadow, (int(sx), int(sy)))
+                    surface.blit(shadow, (int(sx), int(sy)))
 
     def __getstate__(self):
         state = self.__dict__.copy()

@@ -849,7 +849,7 @@ class Scene:
         else:
             self.renderables[index] = [renderable]
 
-    def update(self):
+    def update(self, execute=None):
         dt = self.clock.tick(self.max_fps) / self.game_div
         events = pygame.event.get()
         for event in events:
@@ -907,6 +907,8 @@ class Scene:
         if self.map_system is not None:
             self.map_system._waila_draw(self.screen)
 
+        if execute is not None:
+            execute(self)
 
         fps = self.clock.get_fps()
         pygame.display.set_caption(f"Ortensia | FPS: {int(fps)}")
@@ -929,7 +931,7 @@ if __name__ == "__main__":
 
     # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
     player = AnimatedSolidSprite(s(400), s(300), s(64), s(64))
-    player.add_animation('idle', load_horizontal_spritesheet("examples/AuryRunning.png", 64, 64, row=0))
+    player.add_animation('idle', load_horizontal_spritesheet("../assets/animations/Aury/AuryRunning.png", 64, 64, row=0))
     fg.sprites.append(player)
     water = FluidSprite(s(200), s(500), s(600), s(100), color=(50, 100, 255, 120))
     fg.sprites.append(water)
