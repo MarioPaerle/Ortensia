@@ -683,6 +683,7 @@ class Scene:
         self.solids = []
         self.grid = SpatialGrid(cell_size=500)
         self.running = True
+        self.map_system = None
         self.max_fps = 600
         self.game_div = 1000.0
         self.scale = 1
@@ -892,17 +893,20 @@ class Scene:
                 else:
                     layer.render(self.screen, self.main_camera)
 
-                if hasattr(layer, 'update'):
-                    layer.update(dt)
+                layer.update(dt)
+
+                if self.particle_layer_idx == -1:
+                    for emitter in self.particle_emitters:
+                        emitter.draw(self.screen, self.main_camera)
 
                 for renderable in self.renderables.get(i, []):
                     renderable.render(self.screen, self.main_camera)
                 for renderable in self.renderables.get(-len(self.layers) + i, []):
                     renderable.render(self.screen, self.main_camera)
 
-        if self.particle_layer_idx == -1:
-            for emitter in self.particle_emitters:
-                emitter.draw(self.screen, self.main_camera)
+        if self.map_system is not None:
+            self.map_system._waila_draw(self.screen)
+
 
         fps = self.clock.get_fps()
         pygame.display.set_caption(f"Ortensia | FPS: {int(fps)}")

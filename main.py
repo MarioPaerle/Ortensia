@@ -1,6 +1,7 @@
 from basic import *
 from mapgen import *
-from LevelSystem import LevelDataSystem  # <--- IMPORTA IL NUOVO SISTEMA
+from LevelSystem import LevelDataSystem
+from DayNight import DayNightCycle, ShadedChunkedLayer
 
 if __name__ == '__main__':
     game = Game(1200, 600, title='Ortensia Creative Mode', flag=pygame.SCALED | pygame.RESIZABLE)
@@ -18,74 +19,31 @@ if __name__ == '__main__':
     bg5 = level.add_create_layer("bg5", parallax=0.1)
     bg6 = level.add_create_layer("bg6", parallax=1.2)"""
 
-    bg1 = level.add_create_layer("bg1", 0.001)
-    bg2 = level.add_create_layer("bg2", 0.005)
-    bg3 = level.add_create_layer("bg3", 0.05)
-    bg4 = level.add_create_layer("bg4", 0.1)
-    bg5 = level.add_create_layer("bg5", 0.3)
+    bg1 = level.add_create_layer("bg1", 0, layertype=Layer)
+    bg2 = level.add_create_layer("bg2", 0.005, layertype=Layer)
+    bg3 = level.add_create_layer("bg3", 0.01, layertype=Layer)
+    bg4 = level.add_create_layer("bg4", 0.08, layertype=Layer)
+    bg5 = level.add_create_layer("bg5", 0.25, layertype=Layer)
 
     # bg6 = level.add_create_layer("bg6", parallax=0.8)
     uilayer = UILayer(parallax=0)
-    fg = LitLayer("Foreground", 1, ambient_color=(255, 255, 255))
-    # fg2 = level.add_create_layer("Particles", parallax=1.2)
+    deco_back = ChunkedLayer("DecoBack", parallax=1.0)
+    fg = ShadedChunkedLayer("Foreground", 1)
+    deco_front = ChunkedLayer("DecoFront", parallax=1.0)
 
+    # level.add_layer(deco_back)
     level.add_layer(fg)
+    # level.add_layer(deco_front)
     level.add_layer(uilayer)
     #######################################################
-    map = BlockMap(level, fg)
+    map = BlockMap(level, layers={
+        'back': deco_back,
+        'middle': fg,
+        'front': deco_front,
+    })
     level.set_map(map)
 
-    add_plane(map, 0, 10, 300, 1, block=level.registered_blocks['_Death'])
-
-    """bg1.add_static(
-        Sprite(-0, -80, 2304 // 2, 1396 // 2, (40, 40, 80), texture='assets/textures/backgrounds/Clouds 6/1.png',
-               alpha=True))
-    bg2.add_dynamic(
-        WigglingSprite(
-            x=-60, y=50, w=2304 // 2, h=1396 // 2,
-            texture='assets/textures/backgrounds/Clouds 6/2.png',
-            alpha=True,
-            speed=0.00007,
-            distance=60,
-            vertical=False
-        ))
-    bg3.add_dynamic(
-        WigglingSprite(
-            x=0, y=50, w=2304 // 2, h=1396 // 2,
-            texture='assets/textures/backgrounds/Clouds 6/3.png',
-            alpha=True,
-            speed=0.0001,
-            distance=35,
-            vertical=False
-        ))
-
-    bg4.add_dynamic(WigglingSprite(
-        x=0, y=50, w=2304 // 2, h=1396 // 2,
-        texture='assets/textures/backgrounds/Clouds 8/4.png',
-        alpha=True,
-        speed=0.0001,
-        distance=15,
-        vertical=False
-
-    ))
-
-    bg5.add_dynamic(WigglingSprite(
-        x=0, y=50, w=2304 // 2, h=1396 // 2,
-        texture='assets/textures/backgrounds/Clouds 8/5.png',
-        alpha=True,
-        speed=0.0001,
-        distance=15,
-        vertical=False
-    ))
-
-    bg6.add_dynamic(WigglingSprite(
-        x=0, y=450, w=2304 // 2, h=1396 // 2,
-        texture='assets/textures/backgrounds/Clouds 8/6.png',
-        alpha=True,
-        speed=0.0001,
-        distance=15,
-        vertical=False
-    ))"""
+    # add_plane(map, 0, 10, 300, 1, block=level.registered_blocks['_Death'])
 
     player = Player(50, 200, 24, 64, level=level, cw=16, coffset_x=23, coffset_y=-6)
 

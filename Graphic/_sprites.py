@@ -130,9 +130,11 @@ class SpatialGrid:
     def __init__(self, cell_size=128):
         self.cell_size = cell_size
         self.cells = {}
+        self.dirty = False
 
     def clear(self):
         self.cells.clear()
+        self.dirty = True
 
     def insert(self, sprite):
         x_start = int(sprite.frect.left // self.cell_size)
@@ -156,6 +158,16 @@ class SpatialGrid:
                 if (x, y) in self.cells:
                     nearby.extend(self.cells[(x, y)])
         return nearby
+
+    def mark_dirty(self):
+        self.dirty = True
+
+    def rebuild_if_dirty(self, solids):
+        if self.dirty:
+            self.clear()
+            for obj in solids:
+                self.insert(obj)
+            self.dirty = False
 
 
 class SolidSprite(Sprite):

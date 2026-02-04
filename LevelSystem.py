@@ -69,7 +69,7 @@ class LevelDataSystem:
 
             if existing_layer:
                 current_layer = existing_layer
-                current_layer.parallax = layer_conf['parallax']
+                #current_layer.parallax = layer_conf['parallax']
             else:
                 if layer_conf['type'] == "LitLayer":
                     current_layer = LitLayer(layer_conf['name'], layer_conf['parallax'])

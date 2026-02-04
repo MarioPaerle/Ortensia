@@ -48,7 +48,6 @@ class Camera:
             self.update()
 
     def update(self):
-        # 1. Update Zoom Smoothly
         diff = self.target_zoom - self.zoom
         if abs(diff) < 0.001:
             self.zoom = self.target_zoom
@@ -58,7 +57,6 @@ class Camera:
         view_w = self.width / self.zoom
         view_h = self.height / self.zoom
 
-        # 3. Track Target CENTER
         if self.target:
             t_w = getattr(self.target, 'width', 0)
             t_h = getattr(self.target, 'height', 0)
@@ -69,7 +67,6 @@ class Camera:
             self.scroll_x += (target_center_x - self.scroll_x) * self.smooth
             self.scroll_y += (target_center_y - self.scroll_y) * self.smooth
 
-        # 4. Shake Logic
         shake_x, shake_y = 0, 0
         if self.shake_intensity > 0.1:
             shake_x = random.uniform(-self.shake_intensity, self.shake_intensity)
@@ -78,14 +75,11 @@ class Camera:
         else:
             self.shake_intensity = 0
 
-        # 5. Calculate Final Top-Left Coordinate
-        # TopLeft = Center - Half_View_Size
         prev_x, prev_y = self.x, self.y
 
         self.x = (self.scroll_x - view_w // 2) + shake_x
         self.y = (self.scroll_y - view_h // 2) + shake_y
 
-        # Update velocity (useful for parallax or motion blur effects)
         self.velocity_x = self.x - prev_x
         self.velocity_y = self.y - prev_y
 
@@ -101,6 +95,9 @@ class Layer:
 
         self._cached_surf = None
 
+    def update(self, dt):
+        pass
+
     def add_effect(self, effect_fn, *args):
         self.effects.append((effect_fn, args))
 
@@ -111,7 +108,8 @@ class Layer:
 
     def render(self, screen: pygame.Surface, camera: Camera, emitters=None):
         if not self.visible: return
-
+        if self.name == "DecoFront":
+            print('mannagg')
         if self.parallax == 0.0 and not self.effects and not emitters:
             for s in self.sprites:
                 screen.blit(s.surface, (int(s.x), int(s.y)))
@@ -254,6 +252,7 @@ class ChunkedLayer:
         start_chunk_y = int(cy // self.chunk_size)
         end_chunk_y = int((cy + view_h) // self.chunk_size) + 1
 
+
         for x in range(start_chunk_x - 1, end_chunk_x + 1):
             for y in range(start_chunk_y - 1, end_chunk_y + 1):
                 chunk_key = (x, y)
@@ -293,6 +292,10 @@ class ChunkedLayer:
             screen.blit(scaled_output, (0, 0))
         else:
             screen.blit(layer_surf, (0, 0))
+
+
+    def update(self, dt):
+        pass
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -379,6 +382,9 @@ class LightSource:
     def __setstate__(self, state):
         self.__dict__.update(state)
         self.surface = self._get_surface()
+
+    def update(self, dt):
+        pass
 
 
 class LitLayer(ChunkedLayer):
@@ -483,6 +489,9 @@ class LitLayer(ChunkedLayer):
         else:
             screen.blit(layer_surf, (0, 0))
 
+    def update(self, dt):
+        pass
+
 
 class TileMap:
     def __init__(self, game, layer: ChunkedLayer, tile_size=40, texture=None):
@@ -530,76 +539,374 @@ class TileMap:
 
             del self.data[(gx, gy)]
 
+    def update(self, dt):
+        pass
+
+
+LAYER_BACK = 'back'
+LAYER_MID = 'middle'
+LAYER_FRONT = 'front'
+LAYER_ORDER = (LAYER_BACK, LAYER_MID, LAYER_FRONT)
+
 
 class BlockMap:
-    def __init__(self, level, layer: LitLayer, tile_size=40, texture=None):
+    def __init__(self, level, layers: dict, tile_size=40):
+        """
+        layers = {
+            'back':   <ChunkedLayer or LitLayer>,
+            'middle': <LitLayer>,
+            'front':  <ChunkedLayer or LitLayer>,
+        }
+        """
         self.level = level
-        self.layer = layer
         self.tile_size = tile_size
-        self.texture = texture
-        self.data = {}
-        self.physics_blocks = []
-        self.lights = {}
-        self.hover_light = None
+        self.render_layers = layers
+
+        self.data = {k: {} for k in LAYER_ORDER}
+        self.lights = {k: {} for k in LAYER_ORDER}
+        self.physics_blocks = {k: [] for k in LAYER_ORDER}
+
         self.hover_timer = 0.0
         self.hover_default_color = (190, 190, 255)
         self.hover_color = (190, 190, 255)
+        self.cursor_gx = 0
+        self.cursor_gy = 0
+        self.active_layer = LAYER_MID
 
-    def get_grid_pos(self, screen_x, screen_y):
-        cam_x = self.level.main_camera.x * self.layer.parallax
-        cam_y = self.level.main_camera.y * self.layer.parallax
+        self._waila_target = None
+        self._waila_alpha = 0.0
+        self._waila_offset_x = 0.0
+        self._waila_target_alpha = 0.0
+        self._waila_target_offset = 0.0
+        self._waila_font_name = None
+        self._waila_font_desc = None
+        self._waila_surf = None
 
-        world_x = screen_x + cam_x
-        world_y = screen_y + cam_y
+        self.depth_effects = {
+            'front_fade': True,
+            'back_desaturate': True,
+            'back_darken': True,
+            'front_shadow': True,
+            'back_blur': False,
+        }
 
-        gx = int(world_x // self.tile_size)
-        gy = int(world_y // self.tile_size)
-        return gx, gy
+        self._shadow_surf_cache = {}
 
-    def get_grid_distance(self, p, q):
-        p = self.get_grid_pos(*p)
-        q = self.get_grid_pos(*q)
+    def _layer(self, name):
+        return self.render_layers[name]
+
+    def get_grid_pos(self, screen_x, screen_y, layer_name=LAYER_MID):
+        cam_x = self.level.main_camera.x * self._layer(layer_name).parallax
+        cam_y = self.level.main_camera.y * self._layer(layer_name).parallax
+        return int((screen_x + cam_x) // self.tile_size), int((screen_y + cam_y) // self.tile_size)
+
+    def get_grid_distance(self, p, q, layer_name=LAYER_MID):
+        p = self.get_grid_pos(*p, layer_name)
+        q = self.get_grid_pos(*q, layer_name)
         return math.sqrt((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2)
 
-    def get_grid_distance2(self, p, q):
-        """World object Distance"""
+    def get_grid_distance2(self, p, q, layer_name=LAYER_MID):
         if hasattr(p, 'x') and hasattr(p, 'y'):
             px_world, py_world = p.x, p.y
         else:
             px_world, py_world = p
-
         gx_p = int(px_world // self.tile_size)
         gy_p = int(py_world // self.tile_size)
-
-        gx_q, gy_q = self.get_grid_pos(*q)
-
+        gx_q, gy_q = self.get_grid_pos(*q, layer_name)
         return math.sqrt((gx_p - gx_q) ** 2 + (gy_p - gy_q) ** 2)
 
-    def place_tile(self, screen_x, screen_y, block: Block):
-        gx, gy = self.get_grid_pos(screen_x, screen_y)
-        if (gx, gy) in self.data:
-            return
-
+    def _place_internal(self, gx, gy, block, layer_name):
         world_x = gx * self.tile_size
         world_y = gy * self.tile_size
-
         tile_sprite = block.place(world_x, world_y)
-        if block.light_emission_intensity > 0 and isinstance(self.layer, LitLayer) and not block.physics_block:
-            self.lights[(gx, gy)] = self.layer.add_light(
-                LightSource(world_x, world_x, radius=200, color=block.light_emission_color, falloff=0.99, steps=200))
-        if block.light_emission_intensity > 0 and isinstance(self.layer, LitLayer) and block.physics_block:
-            flag("Light Emitting Blocks do not support Physic as for now", level=2)
 
-        self.layer.add_static(tile_sprite)
-        self.level.solids.append(tile_sprite)
-        self.data[(gx, gy)] = tile_sprite
+        rl = self._layer(layer_name)
+        if block.light_emission_intensity > 0 and isinstance(rl, LitLayer) and not block.physics_block:
+            self.lights[layer_name][(gx, gy)] = rl.add_light(
+                LightSource(world_x, world_y, radius=200, color=block.light_emission_color, falloff=0.99, steps=200))
+        if block.light_emission_intensity > 0 and isinstance(rl, LitLayer) and block.physics_block:
+            flag("Light Emitting Blocks do not support Physics as for now", level=2)
 
-        if tile_sprite.physics_block:
-            self.physics_blocks.append(tile_sprite)
+        rl.add_static(tile_sprite)
+        self.data[layer_name][(gx, gy)] = tile_sprite
+
+        if layer_name == LAYER_MID:
+            self.level.solids.append(tile_sprite)
+            if tile_sprite.physics_block:
+                self.physics_blocks[layer_name].append(tile_sprite)
+
+    def place_tile(self, screen_x, screen_y, block, layer_name=None):
+        layer_name = layer_name or self.active_layer
+        gx, gy = self.get_grid_pos(screen_x, screen_y, layer_name)
+        if (gx, gy) in self.data[layer_name]:
+            return
+        self._place_internal(gx, gy, block, layer_name)
+
+    def set_tile(self, gx, gy, block, layer_name=None, overwrite=False):
+        layer_name = layer_name or self.active_layer
+        if (gx, gy) in self.data[layer_name] and not overwrite:
+            flag(f"Position ({gx}, {gy}) is already occupied on '{layer_name}'. Use overwrite=True")
+            return
+        if overwrite and (gx, gy) in self.data[layer_name]:
+            self.del_tile(gx, gy, layer_name)
+        self._place_internal(gx, gy, block, layer_name)
+
+    def remove_tile(self, screen_x, screen_y, layer_name=None):
+        layer_name = layer_name or self.active_layer
+        gx, gy = self.get_grid_pos(screen_x, screen_y, layer_name)
+        self.del_tile(gx, gy, layer_name)
+
+    def del_tile(self, gx, gy, layer_name=None):
+        layer_name = layer_name or self.active_layer
+        if (gx, gy) in self.data[layer_name]:
+            sprite = self.data[layer_name][(gx, gy)]
+            self._layer(layer_name).remove_static(sprite)
+            if layer_name == LAYER_MID:
+                if sprite in self.level.solids:
+                    self.level.solids.remove(sprite)
+                if sprite in self.physics_blocks[layer_name]:
+                    self.physics_blocks[layer_name].remove(sprite)
+            del self.data[layer_name][(gx, gy)]
+
+        if (gx, gy) in self.lights[layer_name]:
+            self._layer(layer_name).lights.remove(self.lights[layer_name][(gx, gy)])
+            del self.lights[layer_name][(gx, gy)]
+
+    def placer_light(self, screen_x, screen_y, color=None):
+        self.hover_color = color if color else self.hover_default_color
+        self.cursor_gx, self.cursor_gy = self.get_grid_pos(screen_x, screen_y, self.active_layer)
+
+    def _waila_lookup(self, screen_x, screen_y):
+        for ln in (LAYER_MID, LAYER_FRONT, LAYER_BACK):
+            gx, gy = self.get_grid_pos(screen_x, screen_y, ln)
+            if (gx, gy) in self.data[ln]:
+                return self.data[ln][(gx, gy)]
+        return None
+
+    def _waila_render_panel(self, block):
+        from Graphic.gui import FontManager
+        name_font = FontManager.get(self._waila_font_name, 18, bold=True)
+        desc_font = FontManager.get(self._waila_font_desc, 14)
+
+        name_surf = name_font.render(block.name, True, (255, 255, 255))
+        desc_text = getattr(block, 'description', '') or block.id
+        desc_surf = desc_font.render(desc_text, True, (180, 180, 180))
+
+        pad = 10
+        w = max(name_surf.get_width(), desc_surf.get_width()) + pad * 2
+        h = name_surf.get_height() + desc_surf.get_height() + pad * 3
+
+        panel = pygame.Surface((w, h), pygame.SRCALPHA)
+        panel.fill((20, 20, 30, 180))
+        pygame.draw.rect(panel, (100, 100, 140, 200), (0, 0, w, h), 2, border_radius=4)
+
+        panel.blit(name_surf, (pad, pad))
+        panel.blit(desc_surf, (pad, pad + name_surf.get_height() + pad))
+
+        self._waila_surf = panel
+
+    def _waila_update(self, dt, screen_x, screen_y):
+        block = self._waila_lookup(screen_x, screen_y)
+
+        if block is not self._waila_target:
+            self._waila_target = block
+            self._waila_surf = None  # invalidate cache
+
+        if block:
+            self._waila_target_alpha = 1.0
+            self._waila_target_offset = 0.0
+        else:
+            self._waila_target_alpha = 0.0
+            self._waila_target_offset = 60.0
+
+        k = 12.0
+        self._waila_alpha += (self._waila_target_alpha - self._waila_alpha) * min(1.0, k * dt)
+        self._waila_offset_x += (self._waila_target_offset - self._waila_offset_x) * min(1.0, k * dt)
+
+    def _waila_draw(self, surface):
+        if self._waila_alpha < 0.01 or self._waila_target is None:
+            return
+        if self._waila_surf is None:
+            self._waila_render_panel(self._waila_target)
+
+        panel = self._waila_surf.copy()
+        panel.set_alpha(int(self._waila_alpha * 220))
+
+        mx, my = pygame.mouse.get_pos()
+        sw, sh = surface.get_size()
+        pw, ph = panel.get_size()
+
+        draw_x = mx + 14 + self._waila_offset_x
+        draw_y = my - ph - 6
+
+        if draw_x + pw > sw:
+            draw_x = mx - pw - 14 - self._waila_offset_x
+        if draw_y < 0:
+            draw_y = my + 20
+
+        surface.blit(panel, (draw_x, draw_y))
+
+    def __init__(self, level, layers: dict, tile_size=40):
+        """
+        layers = {
+            'back':   <ChunkedLayer or LitLayer>,
+            'middle': <LitLayer>,
+            'front':  <ChunkedLayer or LitLayer>,
+        }
+        """
+        self.level = level
+        self.tile_size = tile_size
+        self.render_layers = layers
+
+        self.data = {k: {} for k in LAYER_ORDER}
+        self.lights = {k: {} for k in LAYER_ORDER}
+        self.physics_blocks = {k: [] for k in LAYER_ORDER}
+
+        self.hover_timer = 0.0
+        self.hover_default_color = (190, 190, 255)
+        self.hover_color = (190, 190, 255)
+        self.cursor_gx = 0
+        self.cursor_gy = 0
+        self.active_layer = LAYER_MID
+
+        self._waila_target = None
+        self._waila_alpha = 0.0
+        self._waila_offset_x = 0.0
+        self._waila_target_alpha = 0.0
+        self._waila_target_offset = 0.0
+        self._waila_font_name = None
+        self._waila_font_desc = None
+        self._waila_surf = None
+
+        self.depth_effects = {
+            'front_fade': True,
+            'back_desaturate': True,
+            'back_darken': True,
+            'front_shadow': True,
+            'back_blur': False,
+        }
+
+        self._shadow_surf_cache = {}
+
+    # ... (all other methods stay the same until update) ...
+
+    def update(self, dt, mouse_pos=None):
+        self.hover_timer += dt * 2.5
+
+        if mouse_pos:
+            self._waila_update(dt, *mouse_pos)
+
+        if self.depth_effects['front_fade']:
+            self._update_front_layer_fade(dt)
+
+        if self.depth_effects['back_desaturate'] or self.depth_effects['back_darken']:
+            self._update_back_layer_effects()
+
+        if not self.physics_blocks[LAYER_MID]:
+            return
+
+        blocks_to_reassign = []
+        for block in self.physics_blocks[LAYER_MID]:
+            moved = block.update_physics(dt, self.level.grid)
+            if moved and block.is_grounded:
+                new_gx = int(block.x // self.tile_size)
+                new_gy = int(block.y // self.tile_size)
+                old_key = None
+                for key, sprite in self.data[LAYER_MID].items():
+                    if sprite is block:
+                        old_key = key
+                        break
+                if old_key and old_key != (new_gx, new_gy):
+                    blocks_to_reassign.append((block, old_key, (new_gx, new_gy)))
+
+        for block, old_key, new_key in blocks_to_reassign:
+            old_world_x = old_key[0] * self.tile_size
+            old_world_y = old_key[1] * self.tile_size
+            self._layer(LAYER_MID).remove_static(block, x=old_world_x, y=old_world_y)
+            del self.data[LAYER_MID][old_key]
+            self._layer(LAYER_MID).add_static(block)
+            self.data[LAYER_MID][new_key] = block
+            self.level.grid.clear()
+            for obj in self.level.solids:
+                self.level.grid.insert(obj)
+
+    def _update_front_layer_fade(self, dt):
+        if not hasattr(self.level, 'player') or self.level.player is None:
+            return
+
+        player = self.level.player
+        player_cx = player.x + player.width / 2
+        player_cy = player.y + player.height / 2
+
+        fade_distance = self.tile_size * 3
+        k = 8.0
+
+        for (gx, gy), sprite in self.data[LAYER_FRONT].items():
+            block_cx = sprite.x + sprite.width / 2
+            block_cy = sprite.y + sprite.height / 2
+
+            dist = math.sqrt((player_cx - block_cx) ** 2 + (player_cy - block_cy) ** 2)
+
+            if dist < fade_distance:
+                target_alpha = int(80 + (dist / fade_distance) * 175)
+            else:
+                target_alpha = 255
+
+            if not hasattr(sprite, '_current_alpha'):
+                sprite._current_alpha = 255.0
+
+            sprite._current_alpha += (target_alpha - sprite._current_alpha) * min(1.0, k * dt)
+            sprite.surface.set_alpha(int(sprite._current_alpha))
+
+    def _update_back_layer_effects(self):
+        import pygame
+        for (gx, gy), sprite in self.data[LAYER_BACK].items():
+            if not hasattr(sprite, '_depth_modified'):
+                original_surf = sprite.surface.copy()
+
+                if self.depth_effects['back_darken']:
+                    dark_overlay = pygame.Surface(original_surf.get_size(), pygame.SRCALPHA)
+                    dark_overlay.fill((0, 0, 0, 60))
+                    original_surf.blit(dark_overlay, (0, 0))
+
+                if self.depth_effects['back_desaturate']:
+                    pixels = pygame.surfarray.pixels3d(original_surf)
+                    gray = (pixels[:, :, 0] * 0.299 + pixels[:, :, 1] * 0.587 + pixels[:, :, 2] * 0.114).astype(
+                        np.uint8)
+                    pixels[:, :, 0] = pixels[:, :, 0] * 0.6 + gray * 0.4
+                    pixels[:, :, 1] = pixels[:, :, 1] * 0.6 + gray * 0.4
+                    pixels[:, :, 2] = pixels[:, :, 2] * 0.6 + gray * 0.4
+                    del pixels
+
+                if self.depth_effects['back_blur']:
+                    w, h = original_surf.get_size()
+                    small = pygame.transform.smoothscale(original_surf, (w // 2, h // 2))
+                    original_surf = pygame.transform.smoothscale(small, (w, h))
+
+                sprite.surface = original_surf
+                sprite._depth_modified = True
+
+    def _create_shadow(self, width, height):
+        cache_key = (width, height)
+        if cache_key in self._shadow_surf_cache:
+            return self._shadow_surf_cache[cache_key]
+
+        shadow = pygame.Surface((width + 8, height + 8), pygame.SRCALPHA)
+        for i in range(4):
+            alpha = 40 - i * 8
+            offset = i * 2
+            pygame.draw.rect(shadow, (0, 0, 0, alpha),
+                             (offset, offset, width, height), border_radius=2)
+
+        self._shadow_surf_cache[cache_key] = shadow
+        return shadow
 
     def render(self, surface, camera):
-        cam_x = camera.x * self.layer.parallax
-        cam_y = camera.y * self.layer.parallax
+        cam_x = camera.x * self._layer(self.active_layer).parallax
+        cam_y = camera.y * self._layer(self.active_layer).parallax
+
+        if self.depth_effects['front_shadow'] and hasattr(self.level, 'player'):
+            self._render_front_shadows(surface, camera)
 
         rect_x = (self.cursor_gx * self.tile_size) - cam_x
         rect_y = (self.cursor_gy * self.tile_size) - cam_y
@@ -608,158 +915,97 @@ class BlockMap:
 
         cursor_surf = pygame.Surface((self.tile_size, self.tile_size), pygame.SRCALPHA)
         cursor_surf.fill((*self.hover_color, pulse_alpha))
-
-        pygame.draw.rect(cursor_surf, (*self.hover_color, 70),
-                         (0, 0, self.tile_size, self.tile_size), 1)
-
+        pygame.draw.rect(cursor_surf, (*self.hover_color, 70), (0, 0, self.tile_size, self.tile_size), 1)
         surface.blit(cursor_surf, (rect_x, rect_y))
 
-    def placer_light(self, screen_x, screen_y, color=None):
-        if color is not None:
-            self.hover_color = color
-        else:
-            self.hover_color = self.hover_default_color
-        self.cursor_gx, self.cursor_gy = self.get_grid_pos(screen_x, screen_y)
+    def _render_front_shadows(self, surface, camera):
+        cam_x = camera.x * self._layer(LAYER_FRONT).parallax
+        cam_y = camera.y * self._layer(LAYER_FRONT).parallax
 
-    def set_tile(self, gx, gy, block: Block, overwrite=False):
-        if (gx, gy) in self.data and not overwrite:
-            flag(f"Position ({gx, gy}) is already occupied. If you want to replace it use overwrite=True")
-            return
+        player = self.level.player
+        player_cy = player.y + player.height / 2
 
-        world_x = gx * self.tile_size
-        world_y = gy * self.tile_size
+        for (gx, gy), sprite in self.data[LAYER_FRONT].items():
+            block_cy = sprite.y + sprite.height / 2
 
-        tile_sprite = block.place(world_x, world_y)
-        if block.light_emission_intensity > 0 and isinstance(self.layer, LitLayer) and not block.physics_block:
-            self.lights[(gx, gy)] = self.layer.add_light(
-                LightSource(world_x, world_x, radius=200, color=block.light_emission_color, falloff=0.99, steps=200))
-        if block.light_emission_intensity > 0 and isinstance(self.layer, LitLayer) and block.physics_block:
-            flag("Light Emitting Blocks do not support Physic as for now", level=2)
+            if block_cy < player_cy:
+                shadow = self._create_shadow(sprite.width, sprite.height)
+                sx = sprite.x - cam_x - 4
+                sy = sprite.y - cam_y - 4
 
-        self.layer.add_static(tile_sprite)
-        self.level.solids.append(tile_sprite)
-        self.data[(gx, gy)] = tile_sprite
+                current_alpha = getattr(sprite, '_current_alpha', 255)
+                shadow_alpha = int((current_alpha / 255) * 0.8 * 255)
+                shadow.set_alpha(shadow_alpha)
 
-        if tile_sprite.physics_block:
-            self.physics_blocks.append(tile_sprite)
-
-    def remove_tile(self, screen_x, screen_y):
-        gx, gy = self.get_grid_pos(screen_x, screen_y - 10)
-        if (gx, gy) in self.data:
-            sprite = self.data[(gx, gy)]
-
-            self.layer.remove_static(sprite)
-            if sprite in self.level.solids:
-                self.level.solids.remove(sprite)
-            if sprite in self.physics_blocks:
-                self.physics_blocks.remove(sprite)
-
-            del self.data[(gx, gy)]
-        if (gx, gy) in self.lights:
-            self.layer.lights.remove(self.lights[(gx, gy)])
-            del self.lights[(gx, gy)]
-
-    def del_tile(self, gx, gy):
-        if (gx, gy) in self.data:
-            sprite = self.data[(gx, gy)]
-
-            self.layer.remove_static(sprite)
-            if sprite in self.level.solids:
-                self.level.solids.remove(sprite)
-            if sprite in self.physics_blocks:
-                self.physics_blocks.remove(sprite)
-
-            del self.data[(gx, gy)]
-        if (gx, gy) in self.lights:
-            self.layer.lights.remove(self.lights[(gx, gy)])
-            del self.lights[(gx, gy)]
-
-    def update(self, dt):
-        self.hover_timer += dt * 2.5
-        if not self.physics_blocks:
-            return
-
-        blocks_to_reassign = []
-
-        for block in self.physics_blocks:
-            moved = block.update_physics(dt, self.level.grid)
-
-            if moved and block.is_grounded:
-                new_gx = int(block.x // self.tile_size)
-                new_gy = int(block.y // self.tile_size)
-
-                old_key = None
-                for key, sprite in self.data.items():
-                    if sprite is block:
-                        old_key = key
-                        break
-
-                if old_key and old_key != (new_gx, new_gy):
-                    blocks_to_reassign.append((block, old_key, (new_gx, new_gy)))
-
-        for block, old_key, new_key in blocks_to_reassign:
-
-            old_world_x = old_key[0] * self.tile_size
-            old_world_y = old_key[1] * self.tile_size
-
-            self.layer.remove_static(block, x=old_world_x, y=old_world_y)
-
-            del self.data[old_key]
-
-            self.layer.add_static(block)
-            self.data[new_key] = block
-
-            self.level.grid.clear()
-            for obj in self.level.solids:
-                self.level.grid.insert(obj)
+                surface.blit(shadow, (int(sx), int(sy)))
 
     def __getstate__(self):
         state = self.__dict__.copy()
-
-        if 'game' in state:
-            del state['game']
-
-        if 'layer' in state:
-            del state['layer']
-
+        for k in ('render_layers', 'level', '_waila_surf'):
+            state.pop(k, None)
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
 
     def save(self, path=''):
-        f = json.dumps({str(s): self.data[s].id for s in self.data})
-        with open(path + '/-blockmap.json', 'w') as file:
-            file.write(f)
-
+        for ln in LAYER_ORDER:
+            f = json.dumps({str(s): self.data[ln][s].id for s in self.data[ln]})
+            with open(path + f'/-blockmap_{ln}.json', 'w') as file:
+                file.write(f)
         flag("Saved BlockMap")
 
     def load(self, level, path=''):
-        try:
-            with open(path + '/-blockmap.json') as file:
-                datas = file.read()
-        except FileNotFoundError:
-            flag(f"No BlockMap found at {path}")
+        found_any = False
+        loaded = {}
+        for ln in LAYER_ORDER:
+            fname = path + f'/-blockmap_{ln}.json'
+            try:
+                with open(fname) as file:
+                    loaded[ln] = json.loads(file.read())
+                found_any = True
+            except FileNotFoundError:
+                flag(f"Not Found -blockmap_{ln}.json")
+
+        if not found_any:
+            try:
+                with open(path + '/-blockmap.json') as file:
+                    loaded[LAYER_MID] = json.loads(file.read())
+                found_any = True
+                flag("Migrated legacy blockmap -> middle layer", level=0)
+            except FileNotFoundError:
+                pass
+
+        if not found_any:
+            flag(f"No BlockMap files found at {path}", level=2)
             return
+
         self.reset(level)
 
-        datas = json.loads(datas)
-        for block in datas:
-            self.set_tile(*eval(block), level.registered_blocks.get(datas[block], level.registered_blocks['_None']))
+        for ln, datas in loaded.items():
+            for block in datas:
+                self.set_tile(*eval(block),
+                              level.registered_blocks.get(datas[block], level.registered_blocks['_None']),
+                              layer_name=ln)
 
     def loadstruct(self, level, path=''):
-        with open(path + 'am-blockmap.json') as file:
-            datas = file.read()
-        datas = json.loads(datas)
-        for block in datas:
-            self.set_tile(*eval(block), level.registered_blocks[datas[block]])
+        for ln in LAYER_ORDER:
+            fname = path + f'/am-blockmap_{ln}.json'
+            try:
+                with open(fname) as file:
+                    datas = json.loads(file.read())
+            except FileNotFoundError:
+                continue
+            for block in datas:
+                self.set_tile(*eval(block), level.registered_blocks[datas[block]], layer_name=ln)
 
     def reset(self, level):
-        for tile in list(self.data.keys()):
-            self.del_tile(*tile)
-        self.data = {}
-        self.physics_blocks = []
-        self.lights = {}
+        for ln in LAYER_ORDER:
+            for tile in list(self.data[ln].keys()):
+                self.del_tile(*tile, ln)
+            self.data[ln] = {}
+            self.physics_blocks[ln] = []
+            self.lights[ln] = {}
 
 
 class UILayer(Layer):

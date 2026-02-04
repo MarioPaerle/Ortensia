@@ -163,6 +163,8 @@ class Player(AnimatedSolidSprite):
         flag(message, 1)
         self.setpos(*self.level.spawnpoint)
         self.life = self.max_life
+        self.vx = 0
+        self.vy = 0
 
     def take_damage(self, quantity):
         "Take a quantity of Damage"
@@ -173,14 +175,18 @@ class Player(AnimatedSolidSprite):
         self.vy += self.GRAVITY * dt
         dy = self.vy * dt + dy
 
+        old_x, old_y = self.x, self.y
         collide, collided_with = self.move(dx, dy, self.level.grid)
+
+        # Only mark grid dirty if we actually moved
+        if abs(self.x - old_x) > 0.01 or abs(self.y - old_y) > 0.01:
+            self.level.grid.mark_dirty()
 
         self.on_floor = False
         if collide == 'b':
             self.vy = 0
             self.on_floor = True
             collided_with.on_touch(self, dt)
-
         elif collide == 'u':
             self.vy = 0
 
@@ -254,6 +260,8 @@ class Player(AnimatedSolidSprite):
 
         if self.life <= 0:
             self.life = 0
+
+        ms.update(dt, mouse_pos=(mx, my))
 
     def save(self, path=''):
         f = {
@@ -407,6 +415,12 @@ class WorldLevel(Scene):
         for savable in self.savable_objects:
             savable.load(self, path=path)
 
+        for point in self.map_system.data['middle']:
+            if 'spawnpoint.png' == self.map_system.data['middle'][point].id:
+                self.spawnpoint = point[0]*self.map_system.tile_size, point[1]*self.map_system.tile_size
+                flag(f"Set Spawnpoint at {point}")
+
+
     def register_blocks(self, blocks: dict):
         self.registered_blocks = blocks
         for block in self.registered_blocks:
@@ -416,6 +430,7 @@ class WorldLevel(Scene):
     def update(self):
         self.update_call()
         super().update()
+
 
 import os
 import json

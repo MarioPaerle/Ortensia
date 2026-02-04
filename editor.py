@@ -325,10 +325,8 @@ class EditorEngine(Engine):
             if layer != self.ui_layer:
                 layer.render(self.screen, camera)
 
-        # 2. Draw Preview (Between world and UI)
         self.draw_preview()
 
-        # 3. Draw UI Layer LAST (Always on top)
         self.ui_layer.render(self.screen, camera)
 
         pygame.display.set_caption(f"{self.name} | FPS: {int(self.clock.get_fps())}")

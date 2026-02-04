@@ -4,18 +4,18 @@ from PIL import Image  # Requires: pip install pillow
 # ================= CONFIGURATION =================
 
 # Input image path
-INPUT_IMAGE = "my_level_design.png"
+INPUT_IMAGE = "my_level_des2.png"
 
-# Output folder (must match where the game looks for saves)
-# The game loads from: saves/[SaveName]/-blockmap.json
-OUTPUT_FILE = "saves/Test/-blockmap.json"
+
+OUTPUT_FILE = "saves/Test/-blockmap_front.json"
 
 
 COLOR_MAP = {
-    (0, 0, 0): "_None",  # Black = Empty/Air (or just skip it)
-    (100, 100, 100): "deepslate2.png",  # Gray = Stone
+    (0, 0, 0): "_None",
+    (255, 255, 255): "spawnpoint.png",
+    (100, 100, 100): "deepslate2.png",
     (100, 100, 170): "BlueOrtensia.png",
-    (255, 0, 0): "_Death",  # Red = Death Block
+    (255, 0, 0): "_Death",
 }
 
 
@@ -32,22 +32,18 @@ def convert_map():
         for x in range(width):
             pixel = img.getpixel((x, y))
 
-            # Check if this color corresponds to a block
             if pixel in COLOR_MAP:
                 block_id = COLOR_MAP[pixel]
 
-                # Skip empty blocks if you don't want to save air
                 if block_id == "_None":
                     continue
 
                 key = str((x, y))
                 block_data[key] = block_id
             else:
-                # Optional: Print warning for unknown colors
                 print(f"Warning: Unknown color {pixel} at {x},{y}")
                 pass
 
-    # Save to JSON
     with open(OUTPUT_FILE, 'w') as f:
         json.dump(block_data, f)
 
