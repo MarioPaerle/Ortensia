@@ -58,6 +58,7 @@ class UIText(UIElement):
         self.align = align
         self.shadow = shadow
         self._rendered_text = text
+        self.alpha = 128
         self.render_text()
 
     def set_text(self, new_text):
@@ -66,14 +67,12 @@ class UIText(UIElement):
             self.render_text()
 
     def render_text(self):
+        self.surface.fill((0, 0, 0, 0))
+        color = (*self.color, self.alpha)
         font = FontManager.get(self.font_name, self.size)
-
-        # Render main text
-        text_surf = font.render(str(self.text), True, self.color)
-
+        text_surf = font.render(str(self.text), True, color)
         final_w, final_h = text_surf.get_size()
 
-        # Create container surface (account for shadow offset)
         if self.shadow:
             self.surface = pygame.Surface((final_w + 2, final_h + 2), pygame.SRCALPHA)
             shadow_surf = font.render(str(self.text), True, (0, 0, 0, 128))
@@ -81,12 +80,12 @@ class UIText(UIElement):
             self.surface.blit(text_surf, (0, 0))
         else:
             self.surface = text_surf
-
+        if self.alpha < 128:
+            self.surface.set_alpha(self.alpha)
         self.width, self.height = self.surface.get_size()
         self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
         self._rendered_text = self.text
 
-        # Alignment adjustments (relative to the x, y point provided)
         if self.align == "center":
             self.x -= self.width // 2
         elif self.align == "right":

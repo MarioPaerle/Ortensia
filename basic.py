@@ -5,6 +5,7 @@ pygame.init()
 from Graphic.base import *
 from Graphic.functions import *
 import random
+from Graphic._audio import SoundEngine
 
 
 def default_scaler(x):
@@ -48,9 +49,11 @@ class Game(Root):
         self.loaded_scenes[name] = scene
 
     def set_scene(self, name):
+        self.loaded_scenes[self.active_scene_name].on_stop()
         if name in self.loaded_scenes:
             self.active_scene_name = name
             self.loaded_scenes[name].clock.tick()
+            self.loaded_scenes[name].on_run()
         else:
             flag("Trying to load a non existing scene", level=3)
 
@@ -147,6 +150,8 @@ class Player(AnimatedSolidSprite):
         self.slotbar = SlotBar(x=260, y=0, level=level, slot_count=9)
         self.uilayer = UILayer()
         self.uilayer.add_element(self.slotbar)
+        self.no_reachable_text = UIText(500, 570, "Not Reachable", shadow=False, font_name="ArcadeClassic", size=25)
+        self.uilayer.add_element(self.no_reachable_text)
         level.add_layer(self.uilayer)
         self.max_life = 20
         self.life = 20
@@ -176,17 +181,38 @@ class Player(AnimatedSolidSprite):
         self.is_dashing = False
         self.dash_timer = 0.0
         self.dash_cooldown_timer = 0.0
+        self.stand_still = False
 
         self.DASH_SPEED = 600
         self.DASH_DURATION = 0.13
         self.DASH_COOLDOWN = 0.6
         self.DOUBLE_TAP_WINDOW = 250  # ms
 
-        # Tap detection
+        # Tap detection (Generic for Keyboard & Controller)
         self.last_tap_time = 0
         self.last_tap_key = None
-        self.prev_key_a = False
-        self.prev_key_d = False
+        self.prev_input_left = False
+        self.prev_input_right = False
+
+        # Inputs for slot switching logic
+        self.prev_lb = False
+        self.prev_rb = False
+
+        # --- CONTROLLER INIT ---
+        pygame.joystick.init()
+        self.joystick = None
+        if pygame.joystick.get_count() > 0:
+            try:
+                self.joystick = pygame.joystick.Joystick(0)
+                self.joystick.init()
+                print(f"Controller detected: {self.joystick.get_name()}")
+            except Exception as e:
+                print(f"Controller error: {e}")
+
+
+        # ----- SOUNDS
+        self.walking_timer = 100
+        self.sound_engine = None
 
     def die(self, message=''):
         "Die animations and modalitiea"
@@ -202,8 +228,6 @@ class Player(AnimatedSolidSprite):
             self.life -= quantity
 
     def physics(self, dt, dx, dy=0, holding_jump=False):
-        # Apply Gravity based on vertical velocity state (Celeste feel)
-        # We disable gravity if we are Flying OR Dashing
         if not self.FLYING and not self.is_dashing:
             if self.vy > 0 and holding_jump:
                 self.GRAVITY = self.GRAVITY_RISE
@@ -221,17 +245,24 @@ class Player(AnimatedSolidSprite):
         old_x, old_y = self.x, self.y
         collide, collided_with = self.move(dx, dy, self.level.grid)
 
-        # Only mark grid dirty if we actually moved
         if abs(self.x - old_x) > 0.01 or abs(self.y - old_y) > 0.01:
             self.level.grid.mark_dirty()
 
         self.on_floor = False
         if collide == 'b':
+            collided_with.on_touch(self, dt)
+            if self.walking_timer <= 0 and dx != 0:
+                self.walking_timer = 22
+                collided_with.play_r('touch')
             self.vy = 0
             self.on_floor = True
-            collided_with.on_touch(self, dt)
         elif collide == 'u':
             self.vy = 0
+
+        if self.walking_timer > 0:
+            self.walking_timer -= 1
+        if dy < 0:
+            self.walking_timer = 0
 
     def switch_mode(self):
         if self.mode == 0:
@@ -253,77 +284,141 @@ class Player(AnimatedSolidSprite):
 
         curr_time_ms = pygame.time.get_ticks()
 
-        # --- DOUBLE TAP DASH DETECTION ---
-        # Detect Rising Edge for 'A'
-        if keys[pygame.K_a] and not self.prev_key_a:
-            if self.last_tap_key == 'a' and (curr_time_ms - self.last_tap_time) < self.DOUBLE_TAP_WINDOW:
-                if self.dash_cooldown_timer <= 0 and self.mode == 0:  # Only dash in survival/normal mode
+        # --- INPUT UNIFICATION ---
+        input_left = keys[pygame.K_a]
+        input_right = keys[pygame.K_d]
+        input_up = keys[pygame.K_w]
+        input_down = keys[pygame.K_s]
+        input_jump = keys[pygame.K_SPACE]
+        input_dash_btn = False
+
+        mouse_buttons = pygame.mouse.get_pressed()
+        input_place = mouse_buttons[2]
+        input_destroy = mouse_buttons[0]
+
+        input_lb = False
+        input_rb = False
+
+        if self.joystick:
+            axis_x = self.joystick.get_axis(0)
+            if axis_x < -0.4:
+                input_left = True
+            elif axis_x > 0.4:
+                input_right = True
+
+            axis_y = self.joystick.get_axis(1)
+            if axis_y < -0.4:
+                input_up = True
+            elif axis_y > 0.4:
+                input_down = True
+
+            if self.joystick.get_button(0): input_jump = True
+
+            if self.joystick.get_button(2): input_dash_btn = True
+
+            if self.joystick.get_button(4): input_lb = True
+
+            if self.joystick.get_button(5): input_rb = True
+
+            rx = self.joystick.get_axis(2)
+            ry = self.joystick.get_axis(3)
+            if abs(rx) > 0.2 or abs(ry) > 0.2:
+                mx, my = pygame.mouse.get_pos()
+                sensitivity = 800 * dt
+                pygame.mouse.set_pos(mx + rx * sensitivity, my + ry * sensitivity)
+
+            if self.joystick.get_axis(4) > 0.5:
+                input_place = True
+
+            if self.joystick.get_axis(5) > 0.5:
+                input_destroy = True
+
+        if input_rb and not self.prev_rb:
+            self.slotbar.selected_index = (self.slotbar.selected_index + 1) % 9
+            self.slotbar.render_bar()
+        self.prev_rb = input_rb
+
+        if input_lb and not self.prev_lb:
+            self.slotbar.selected_index = (self.slotbar.selected_index - 1) % 9
+            self.slotbar.render_bar()
+
+        self.prev_lb = input_lb
+
+        if input_left and not self.prev_input_left:
+            if self.last_tap_key == 'left' and (curr_time_ms - self.last_tap_time) < self.DOUBLE_TAP_WINDOW:
+                if self.dash_cooldown_timer <= 0 and self.mode == 0:
                     self.is_dashing = True
                     self.dash_timer = self.DASH_DURATION
                     self.dash_cooldown_timer = self.DASH_COOLDOWN
                     self.facing_right = False
-            self.last_tap_key = 'a'
-            self.last_tap_time = curr_time_ms
-        self.prev_key_a = keys[pygame.K_a]
+                    self.sound_engine.play_sfx("assets/sounds/dash1.wav")
 
-        # Detect Rising Edge for 'D'
-        if keys[pygame.K_d] and not self.prev_key_d:
-            if self.last_tap_key == 'd' and (curr_time_ms - self.last_tap_time) < self.DOUBLE_TAP_WINDOW:
+            self.last_tap_key = 'left'
+            self.last_tap_time = curr_time_ms
+        self.prev_input_left = input_left
+
+        if input_right and not self.prev_input_right:
+            if self.last_tap_key == 'right' and (curr_time_ms - self.last_tap_time) < self.DOUBLE_TAP_WINDOW:
                 if self.dash_cooldown_timer <= 0 and self.mode == 0:
                     self.is_dashing = True
                     self.dash_timer = self.DASH_DURATION
                     self.dash_cooldown_timer = self.DASH_COOLDOWN
                     self.facing_right = True
-            self.last_tap_key = 'd'
+                    self.sound_engine.play_sfx("assets/sounds/dash1.wav")
+            self.last_tap_key = 'right'
             self.last_tap_time = curr_time_ms
-        self.prev_key_d = keys[pygame.K_d]
 
-        # --- MOVEMENT CALCULATION ---
+
+        self.prev_input_right = input_right
+
+        if input_dash_btn and self.dash_cooldown_timer <= 0 and self.mode == 0 and not self.is_dashing:
+            self.is_dashing = True
+            self.dash_timer = self.DASH_DURATION
+            self.dash_cooldown_timer = self.DASH_COOLDOWN
+
+            if input_left:
+                self.facing_right = False
+            elif input_right:
+                self.facing_right = True
+
         current_vx = 0
         dy = 0
 
         if self.is_dashing:
-            # Dash Logic
             self.dash_timer -= dt
             if self.dash_timer <= 0:
                 self.is_dashing = False
-                self.vy = 0  # Stop vertical momentum after dash
+                self.vy = 0
             else:
                 current_vx = self.DASH_SPEED if self.facing_right else -self.DASH_SPEED
-                self.vy = 0  # Lock Y axis
+                self.vy = 0
         else:
-            # Normal Movement
-            if keys[pygame.K_a]:
+            if input_left:
                 current_vx -= self.SPEED_X
                 self.facing_right = False
-            if keys[pygame.K_d]:
+            if input_right:
                 current_vx += self.SPEED_X
                 self.facing_right = True
 
-        # --- JUMP LOGIC ---
         if not self.is_dashing:
-            # 1. Update Buffer
-            if keys[pygame.K_SPACE] and not self.prev_space_state:
+            if input_jump and not self.prev_space_state:
                 self.jump_buffer_timer = self.JUMP_BUFFER_DURATION
-            self.prev_space_state = keys[pygame.K_SPACE]
+            self.prev_space_state = input_jump
 
-            # 2. Determine Intent
-            wants_to_jump = (self.jump_buffer_timer > 0) or keys[pygame.K_SPACE]
+            wants_to_jump = (self.jump_buffer_timer > 0) or input_jump
 
-            # 3. Execute Jump
             if self.on_floor and wants_to_jump:
                 self.vy = -self.JUMP_FORCE
                 self.jump_buffer_timer = 0
 
                 # Flying Logic
-            elif keys[pygame.K_w] and self.mode == 1 and (not self.on_floor or self.FLYING):
+            elif input_up and self.mode == 1 and (not self.on_floor or self.FLYING):
                 self.FLYING = True
                 self.vy = 0
                 dy = -300 * dt
-            if keys[pygame.K_s] and self.mode == 1:
+            if input_down and self.mode == 1:
                 dy = 300 * dt
 
-        # Handle Flying Gravity Override
         if self.FLYING:
             self.GRAVITY = 0
         if self.FLYING and self.on_floor:
@@ -331,14 +426,14 @@ class Player(AnimatedSolidSprite):
 
         # Physics Step
         dx = current_vx * dt
-        self.physics(dt, dx, dy, holding_jump=keys[pygame.K_SPACE])
+        self.physics(dt, dx, dy, holding_jump=input_jump)
 
         # Animations
         if self.is_dashing:
             self.set_state("walk")
-        elif keys[pygame.K_SPACE] and dx > 0:
+        elif input_jump and dx > 0:
             self.set_state("jump_right")
-        elif keys[pygame.K_SPACE] and dx < 0:
+        elif input_jump and dx < 0:
             self.set_state("jump_left")
         elif dx > 0:
             self.set_state("walk_right")
@@ -349,37 +444,39 @@ class Player(AnimatedSolidSprite):
 
         self.update_animation(dt)
 
-        # --- MOUSE INTERACTION (With Cooldown) ---
         ms = self.level.map_system
-        mouse_buttons = pygame.mouse.get_pressed()
         mx, my = pygame.mouse.get_pos()
 
         distance = ms.get_grid_distance2(self.pos(), (mx, my))
 
         if distance < 4 or self.mode == 1:
             ms.placer_light(mx, my, color=(255, 255, 255))
+            item_in_hand = self.slotbar.get_selected()
 
-            if hasattr(ms, 'get_tile'):
-                clicked = ms.get_tile(mx, my)
-            else:
-                clicked = ms._waila_lookup(mx, my)
+            clicked = ms.get_tile(mx, my)
 
             if self.click_cooldown_timer <= 0:
                 action_performed = False
 
-                if mouse_buttons[2]:
-                    if clicked is None:
+                if input_place:
+                    if clicked is None and isinstance(item_in_hand, Block):
                         block = self.slotbar.get_and_use_selected(consume=(1 if self.mode == 0 else 0))
                         if block.id != '_None':
                             ms.place_tile(mx, my, block=block)
                             self.level.refresh_grid()
                             action_performed = True
-                    else:
+                    elif isinstance(clicked, Block):
                         clicked.on_click(self)
                         action_performed = True
+                    elif not isinstance(item_in_hand, Block):
+                        if hasattr(item_in_hand, 'on_click'):
+                            item_in_hand.on_click(self)
+                        action_performed = True
 
-                if mouse_buttons[0]:
-                    ms.remove_tile(mx, my)
+                if input_destroy and clicked is not None and item_in_hand.id != '_None':
+                    if not isinstance(item_in_hand, Block) and clicked.type in item_in_hand.breaking:
+                        ms.remove_tile(mx, my)
+                        item_in_hand.on_use(self)
                     self.level.refresh_grid()
                     action_performed = True
 
@@ -387,7 +484,13 @@ class Player(AnimatedSolidSprite):
                     self.click_cooldown_timer = self.CLICK_COOLDOWN_DURATION
 
         else:
+            if input_destroy or input_place:
+                self.no_reachable_text.alpha = 128
+
             ms.placer_light(mx, my, color=(180, 20, 20))
+
+        if self.no_reachable_text.alpha > 0:
+            self.no_reachable_text.alpha -= self.no_reachable_text.alpha / 30
 
         if self.life <= 0:
             self.die('Player Dead')
@@ -398,6 +501,7 @@ class Player(AnimatedSolidSprite):
             self.life = 0
 
         ms.update(dt, mouse_pos=(mx, my))
+        self.no_reachable_text.render_text()
 
     def save(self, path=''):
         f = {
@@ -419,6 +523,9 @@ class Player(AnimatedSolidSprite):
         x = datas['x']
         y = datas['y']
         self.setpos(x, y)
+        self.slotbar.slots = [
+            [level.registered_blocks.get(a, '_None'), b] for a, b in datas['slotbar']
+        ]
         self.slotbar.render_bar()
 
 
@@ -517,6 +624,9 @@ class WorldLevel(Scene):
         self.level_name = ''
         self.spawnpoint = (400, 300)
         self.update_call = lambda: 0
+        self.music = ""
+        self.ambience = ""
+        self.sound_engine = None
 
     def set_map(self, map_system):
         if self.map_system is not None:
@@ -525,6 +635,30 @@ class WorldLevel(Scene):
         self.updatables.append(self.map_system)
         self.savable_objects.append(self.map_system)
         self.add_renderable(self.map_system, -2)
+
+    def play_music(self):
+        if self.sound_engine is None:
+            raise Exception("You must initialize the Sound Engine before playing")
+        if self.music:
+            self.sound_engine.play_music(self.music)
+        else:
+            flag("No Music is present", 2)
+
+    def play_ambience(self):
+        if self.sound_engine is None:
+            raise Exception("You must initialize the Sound Engine before playing")
+        if self.ambience:
+            self.sound_engine.play_ambience(self.ambience)
+        else:
+            flag("No Ambience is present", 2)
+
+    def on_run(self):
+        if self.sound_engine is not None:
+            self.play_ambience()
+            self.play_music()
+
+    def on_stop(self):
+        self.sound_engine.pause_all()
 
     def add_player(self, player):
         self.player = player
@@ -577,61 +711,118 @@ import json
 
 
 def get_save_names(path='saves/'):
-    return os.listdir(path)
+    return [s for s in os.listdir(path) if '.' not in s]
 
 
 class SaveMenu(Scene):
     def __init__(self, game_root):
         super().__init__(game_root)
-        self.ui = UILayer("SaveSelection")
+        self.root = game_root
+
+        # 1. Setup Background Layer
+        self.background = Layer('bg', 0)
+        self.add_layer(self.background)  # <--- CRITICAL FIX: Add layer to scene
+
+        # 2. Setup Background GIF
+        self._init_random_bg_gif()
+
+        # 3. Setup UI Layer
+        self.ui = UILayer("SaveSelection", parallax=0)
         self.add_layer(self.ui)
         self.refresh_saves()
-        self.root = game_root
+
+    def _init_random_bg_gif(self):
+        bg_dir = "assets/backgrounds"
+
+        # Ensure directory exists and get only GIFs
+        if not os.path.exists(bg_dir):
+            print(f"Directory missing: {bg_dir}")
+            return
+
+        gifs = [f for f in os.listdir(bg_dir) if f.lower().endswith('.gif')]
+
+        if gifs:
+            selected_gif = random.choice(gifs)
+            full_path = os.path.join(bg_dir, selected_gif)
+
+            # Create Sprite covering the whole screen
+            w, h = self.root.w, self.root.h
+            self.bg = AnimatedSprite(0, 0, w, h)
+
+            frames = load_gif_as_surfaces(full_path, target_size=(1200, 900))
+
+            if frames:
+                self.bg.add_animation("idle", frames)
+                self.bg.set_state('idle')
+
+                self.background.sprites.append(self.bg)
+                self.updatables.append(self.bg)
+            else:
+                print(f"Failed to load frames from {selected_gif}")
 
     def refresh_saves(self):
         self.ui.elements.clear()
 
         saves = get_save_names()
 
-        self.ui.add_element(UIText(x=self.centerx - 100, y=50, text="Select World", size=40))
+        self.ui.add_element(
+            UIText(x=self.root.w // 2 - 120, y=50, text="Select Level", size=40, font_name="ArcadeClassic", shadow=True))
 
         start_y = 120
         for i, save_name in enumerate(saves):
+            cx = self.root.w // 2
+
             btn = UIButton(
-                x=self.centerx - 150,
+                x=cx - 150,
                 y=start_y + (i * 55),
                 width=300,
                 height=45,
                 text=save_name
             )
             btn2 = UIButton(
-                x=self.centerx + 160,
+                x=cx + 160,
                 y=start_y + (i * 55),
                 width=50,
                 height=45,
                 text='Del'
             )
-            btn.on_click = lambda name=save_name: self.load_and_play(name)
-            btn2.on_click = lambda name=save_name: self.remove(name)
+
+            # Lambda binding fix
+            btn.on_click = lambda s=save_name: self.load_and_play(s)
+            btn2.on_click = lambda s=save_name: self.remove(s)
+
             self.ui.add_element(btn)
             self.ui.add_element(btn2)
 
-        back_btn = UIButton(x=self.centerx - 75, y=500, width=150, height=40, text="Back to Title")
+        back_btn = UIButton(x=self.root.w // 2 - 75, y=500, width=150, height=40, text="Back to Title")
         back_btn.on_click = lambda: self.root.set_scene('0')
         self.ui.add_element(back_btn)
 
     def load_and_play(self, save_name):
         self.root.set_scene('1')
-        world_level = self.root.loaded_scenes['1']
-        world_level.load(f"saves/{save_name}")
+        if '1' in self.root.loaded_scenes:
+            world_level = self.root.loaded_scenes['1']
+            world_level.load(f"saves/{save_name}")
 
     def remove(self, save_name):
         try:
-            for file in os.listdir("saves"):
-                if f"{save_name}-" in file:  # TODO: This is Brutally wrong
-                    os.remove(f"saves/{file}")
-        except PermissionError:
-            flag(f"Impossible to delete {save_name} due to Lack of Permissions", 3)
+            # Safer removal logic could be implemented here
+            # For now keeping basic logic but wrapping paths
+            import shutil
+            save_path = f"saves/{save_name}"
+            # If your saves are folders:
+            if os.path.isdir(save_path):
+                shutil.rmtree(save_path)
+                self.refresh_saves()
+            # If your saves are files prefix based (legacy way):
+            else:
+                for file in os.listdir("saves"):
+                    if file.startswith(f"{save_name}"):
+                        os.remove(f"saves/{file}")
+                self.refresh_saves()
+
+        except Exception as e:
+            flag(f"Error deleting {save_name}: {e}", 3)
 
 
 class SaveAsMenu(Scene):

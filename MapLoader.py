@@ -8,12 +8,12 @@ import random
 INPUT_IMAGE = "my_level_design.png"
 
 
-OUTPUT_FILE = "saves/Test/-blockmap_middle.json"
+OUTPUT_FILE = "saves/Opening/-blockmap_middle.json"
 
 
 COLOR_MAP = {
     (0, 0, 0): "_None",
-    (255, 255, 255): "_Light1",
+    (255, 255, 255): "spawnpoint.png",
     (255, 255, 0): "HighStainedGlass",
     (100, 100, 100): "deepslate2.png",
     (50, 50, 50): "deepslate_down.png",

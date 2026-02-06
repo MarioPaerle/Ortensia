@@ -5,7 +5,7 @@ import copy
 from Graphic.functions import load_horizontal_spritesheet
 import random
 import math
-
+import json
 
 class Sprite:
     def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False):
@@ -113,6 +113,10 @@ class AnimatedSprite(Sprite):
             else:
                 self.surface = base_frame
 
+
+    def update(self, dt):
+        return self.update_animation(dt)
+
     def set_state(self, state: str):
         """Change animation state"""
         if self.current_state != state:
@@ -172,8 +176,6 @@ class SpatialGrid:
 
 
 class SolidSprite(Sprite):
-    """Sprite with collision detection"""
-
     def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False,
                  cw=None, ch=None, coffset_x=0, coffset_y=0):
         super().__init__(x, y, w, h, color, texture=texture, alpha=alpha)
@@ -280,22 +282,26 @@ class AnimatedSolidSprite(SolidSprite):
         self.frame_index = 0.0
         self.animation_speed = 10.0
 
-    def add_animation(self, name: str, frames, loader=None):
-        """
-        Registers an animation using a loader.
-        The loader is saved; the surfaces are generated immediately for use.
-        """
+    def add_animation(self, name: str, frames, loader=None, stops=False, speed=None):
         # self.anim_loaders[name] = loader
-        self.animations[name] = frames
+        if speed is None:
+            speed = self.animation_speed
+        self.animations[name] = [frames, stops, speed]
 
     def update_animation(self, dt):
         """Advances the frame index based on time."""
         if self.current_state in self.animations:
-            self.frame_index += self.animation_speed * dt
+            frames = self.animations[self.current_state][0]
+            stops = self.animations[self.current_state][1]
+            speed = self.animations[self.current_state][2]
 
-            frames = self.animations[self.current_state]
+            self.frame_index += speed * dt
+
             if self.frame_index >= len(frames):
-                self.frame_index = 0
+                if stops:
+                    self.set_state("idle")
+                else:
+                    self.frame_index = 0
 
             current_frame = int(self.frame_index)
             current_frame = current_frame % len(frames)
@@ -409,7 +415,9 @@ class Block(SolidSprite):
             light_emission_color=(255, 255, 255),
             gravity=980,
             max_fall_speed=1000,
-            name = "Generic Block"
+            name="Generic Block",
+            type="Generic",
+            sounds=None
     ):
         super().__init__(
             -100,
@@ -421,7 +429,6 @@ class Block(SolidSprite):
             alpha=alpha,
         )
 
-        # Identity
         self.id = id
         self.name = name
 
@@ -441,6 +448,11 @@ class Block(SolidSprite):
         self.is_grounded = False
         self.max_fall_speed = max_fall_speed
 
+        self.type = type
+        self.metadata = {}
+        self.sounds = {} if sounds is None else sounds
+        self.sound_engine = None
+
     def clone(self):
         new_obj = copy.copy(self)
         new_obj.frect = self.frect.copy()
@@ -448,6 +460,12 @@ class Block(SolidSprite):
         new_obj.velocity_y = 0
         new_obj.is_grounded = False
         return new_obj
+
+    def get_metadata(self):
+        return self.metadata
+
+    def set_metadata(self, metadata):
+        self.metadata = metadata
 
     def place(self, x, y):
         new_block = self.clone()
@@ -508,8 +526,20 @@ class Block(SolidSprite):
     def on_click(self, other, dt=1):
         pass
 
+    def on_place(self, other=None, layer=None, dt=1):
+        pass
+
+    def dump(self):
+        """Dumps metadata in json"""
+        json.dumps(self.metadata)
+        return json.dumps(self.metadata)
+
     def __repr__(self):
         return f'<Block {self.id} at ({self.x}, {self.y})>'
+
+    def play_r(self, sound):
+        if sound in self.sounds:
+            self.sound_engine.play_sfx(random.choice(self.sounds[sound]))
 
 
 class AnimatedBlock(AnimatedSolidSprite):

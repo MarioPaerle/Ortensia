@@ -1,6 +1,8 @@
 import pygame
 import numpy as np
 from colorama import Fore
+from PIL import ImageSequence, Image
+
 
 RED = Fore.RED
 BLUE = Fore.BLUE
@@ -36,6 +38,7 @@ def load_horizontal_spritesheet(filename, frame_w, frame_h, row='all', scale=(1,
     fframes = [pygame.transform.flip(pygame.transform.scale_by(f, factor=scale), flipx, flipy) for f in frames]
     return fframes
 
+
 def load_vertical_spritesheet(filename, frame_w, frame_h, col='all', scale=(1, 1)):
     sheet = pygame.image.load(filename).convert_alpha()
     frames = []
@@ -52,6 +55,37 @@ def load_vertical_spritesheet(filename, frame_w, frame_h, col='all', scale=(1, 1
 
     return [pygame.transform.scale_by(f, factor=scale) for f in frames]
 
+
+def load_gif_as_surfaces(path, target_size=None):
+    """
+    Loads a GIF file and returns a list of pygame Surfaces (frames).
+
+    :param path: Path to the .gif file
+    :param target_size: (width, height) tuple to scale frames to. If None, keeps original size.
+    """
+    try:
+        pil_image = Image.open(path)
+    except Exception as e:
+        print(f"[GIF Loader] Failed to load: {path}. Error: {e}")
+        return []
+
+    frames = []
+    for frame in ImageSequence.Iterator(pil_image):
+        # Convert to RGBA to ensure transparency works
+        frame = frame.convert("RGBA")
+
+        mode = frame.mode
+        size = frame.size
+        data = frame.tobytes()
+
+        surface = pygame.image.fromstring(data, size, mode)
+
+        if target_size:
+            surface = pygame.transform.scale(surface, target_size)
+
+        frames.append(surface)
+
+    return frames
 
 def scale_color(color, factor):
     return [min(255, max(0, int(c * factor))) for c in color]

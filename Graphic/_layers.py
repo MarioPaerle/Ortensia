@@ -85,9 +85,10 @@ class Camera:
 
 
 class Layer:
-    def __init__(self, name: str, parallax: float = 1.0, **kwargs):
+    def __init__(self, name: str, parallax: float = 1.0, realized_parallax=None, **kwargs):
         self.name = name
         self.parallax = parallax
+        self.realized_parallax = realized_parallax if realized_parallax is not None else self.parallax
         self.sprites: List[Sprite] = []
         self.effects: List[Tuple[Any, tuple]] = []
         self.emitters = []
@@ -108,8 +109,7 @@ class Layer:
 
     def render(self, screen: pygame.Surface, camera: Camera, emitters=None):
         if not self.visible: return
-        if self.name == "DecoFront":
-            print('mannagg')
+
         if self.parallax == 0.0 and not self.effects and not emitters:
             for s in self.sprites:
                 screen.blit(s.surface, (int(s.x), int(s.y)))
@@ -152,16 +152,67 @@ class Layer:
         self._cached_surf = None
 
 
-class ChunkedLayer:
-    def __init__(self, name: str, parallax: float = 1.0, chunk_size: int = 500):
+class ParticleLayer:
+    def __init__(self, name: str, parallax: float = 1.0, realized_parallax=None, **kwargs):
         self.name = name
         self.parallax = parallax
+        self.realized_parallax = realized_parallax if realized_parallax is not None else self.parallax
+        self.sprites: List[Sprite] = []
+        self.effects: List[Tuple[Any, tuple]] = []
+        self.emitters = []
+        self.visible = True
+
+        self._cached_surf = None
+
+    def update(self, dt):
+        pass
+
+    def add_effect(self, effect_fn, *args):
+        self.effects.append((effect_fn, args))
+
+    def _get_layer_surf(self, size: Tuple[int, int]) -> pygame.Surface:
+        if self._cached_surf is None or self._cached_surf.get_size() != size:
+            self._cached_surf = pygame.Surface(size, pygame.SRCALPHA)
+        return self._cached_surf
+
+    def render(self, screen: pygame.Surface, camera: Camera, emitters=None):
+        if not self.visible: return
+
+        screen_size = screen.get_size()
+        layer_surf = self._get_layer_surf(screen_size)
+
+        layer_surf.fill((0, 0, 0, 0))
+
+        for emitter in self.emitters:
+            emitter.draw(layer_surf, camera, self.parallax)
+
+        for effect_fn, args in self.effects:
+            effect_fn(layer_surf, *args)
+
+        screen.blit(layer_surf, (0, 0))
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if '_cached_surf' in state:
+            del state['_cached_surf']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._cached_surf = None
+
+
+class ChunkedLayer:
+    def __init__(self, name: str, parallax: float = 1.0, chunk_size: int = 500, realized_parallax=None):
+        self.name = name
+        self.parallax = parallax
+        self.realized_parallax = parallax if realized_parallax is None else realized_parallax
         self.visible = True
         self.chunk_size = chunk_size
 
         self.chunks = {}
-        self.sprites = []  # Dynamic objects
-        self.large_sprites = []  # NEW: Large static objects (Backgrounds, big trees)
+        self.sprites = []
+        self.large_sprites = []
 
         self.effects: List[Tuple[Any, tuple]] = []
         self.emitters: List[Tuple[Any, tuple]] = []
@@ -388,8 +439,8 @@ class LightSource:
 
 
 class LitLayer(ChunkedLayer):
-    def __init__(self, name, parallax=1, ambient_color=(20, 20, 30)):
-        super().__init__(name, parallax)
+    def __init__(self, name, parallax=1, ambient_color=(20, 20, 30), realized_parallax=None):
+        super().__init__(name, parallax, realized_parallax=realized_parallax)
         self.lights = []
         self.ambient_color = ambient_color
 
@@ -615,10 +666,11 @@ class BlockMap:
         gx_q, gy_q = self.get_grid_pos(*q, layer_name)
         return math.sqrt((gx_p - gx_q) ** 2 + (gy_p - gy_q) ** 2)
 
-    def _place_internal(self, gx, gy, block, layer_name):
+    def _place_internal(self, gx, gy, block, layer_name, placer=None):
         world_x = gx * self.tile_size
         world_y = gy * self.tile_size
         tile_sprite = block.place(world_x, world_y)
+        block.on_place(other=placer, layer=self._layer(layer_name))
 
         rl = self._layer(layer_name)
         if block.light_emission_intensity > 0 and isinstance(rl, LitLayer) and not block.physics_block:
@@ -637,12 +689,12 @@ class BlockMap:
             if tile_sprite.physics_block:
                 self.physics_blocks[layer_name].append(tile_sprite)
 
-    def place_tile(self, screen_x, screen_y, block, layer_name=None):
+    def place_tile(self, screen_x, screen_y, block, layer_name=None, placer=None):
         layer_name = layer_name or self.active_layer
         gx, gy = self.get_grid_pos(screen_x, screen_y, layer_name)
         if (gx, gy) in self.data[layer_name]:
             return
-        self._place_internal(gx, gy, block, layer_name)
+        self._place_internal(gx, gy, block, layer_name, placer=placer)
 
     def set_tile(self, gx, gy, block, layer_name=None, overwrite=False):
         layer_name = layer_name or self.active_layer
@@ -916,8 +968,14 @@ class BlockMap:
         self.__dict__.update(state)
 
     def save(self, path=''):
+        metadata = {str(s): self.data['middle'][s].get_metadata() for s in self.data['middle']}
+        f2 = json.dumps(metadata)
+        with open(path + f'/-blockmap_metadata.json', 'w') as file:
+            file.write(f2)
+
         for ln in LAYER_ORDER:
-            f = json.dumps({str(s): self.data[ln][s].id for s in self.data[ln]})
+            data = {str(s): self.data[ln][s].id for s in self.data[ln]}
+            f = json.dumps(data)
             with open(path + f'/-blockmap_{ln}.json', 'w') as file:
                 file.write(f)
         flag("Saved BlockMap")
@@ -925,6 +983,10 @@ class BlockMap:
     def load(self, level, path=''):
         found_any = False
         loaded = {}
+        fname = path + f'/-blockmap_metadata.json'
+        with open(fname) as file:
+            loaded_metadata = json.loads(file.read())
+
         for ln in LAYER_ORDER:
             fname = path + f'/-blockmap_{ln}.json'
             try:
@@ -953,7 +1015,10 @@ class BlockMap:
             for block in datas:
                 self.set_tile(*eval(block),
                               level.registered_blocks.get(datas[block], level.registered_blocks['_None']),
-                              layer_name=ln)
+                              layer_name=ln
+                              )
+                if block in loaded_metadata:
+                    self.data[ln][*eval(block)].set_metadata(loaded_metadata[block])
 
     def loadstruct(self, level, path=''):
         for ln in LAYER_ORDER:

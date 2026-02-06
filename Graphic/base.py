@@ -4,7 +4,7 @@ import math
 import datetime
 
 PARTICLE_EMISSION_QUALITY = 1
-EFFECTS_QUALITY = 4
+EFFECTS_QUALITY = 2
 
 
 class PostProcessing:
@@ -722,9 +722,9 @@ class Scene:
         focal_parallax = 0.93
         original_cam_x = self.main_camera.x
 
-        self._left_buffer.fill((20, 20, 30))
+        self._left_buffer.fill((30, 30, 30))
         for i, layer in enumerate(layers_to_draw):
-            depth_factor = layer.parallax - focal_parallax
+            depth_factor = layer.realized_parallax - focal_parallax
             layer_shift = depth_factor * self.stereo_separation
 
             self.main_camera.x = original_cam_x - (layer_shift / 2)
@@ -768,7 +768,7 @@ class Scene:
         focal_parallax = 0.93
         original_cam_x = self.main_camera.x
 
-        self._left_buffer.fill((20, 20, 30))
+        self._left_buffer.fill((30, 30, 30))
 
         for i, layer in enumerate(layers_to_draw):
             depth_factor = layer.parallax - focal_parallax
@@ -823,7 +823,7 @@ class Scene:
             for emitter in self.particle_emitters:
                 emitter.update(dt)
 
-            self.screen.fill((20, 20, 30))
+            self.screen.fill((30, 30, 30))
 
             for i, layer in enumerate(self.layers):
                 if self.particle_layer_idx != -1 and self.particle_layer_idx == i:
@@ -885,7 +885,7 @@ class Scene:
         elif self.sbs_mode:
             self._render_sbs(self.screen, self.layers, self.particle_emitters)
         else:
-            self.screen.fill((17, 13, 38))
+            self.screen.fill((30, 30, 30))
 
             for i, layer in enumerate(self.layers):
                 if self.particle_layer_idx != -1 and self.particle_layer_idx == i:
@@ -912,6 +912,13 @@ class Scene:
 
         fps = self.clock.get_fps()
         pygame.display.set_caption(f"Ortensia | FPS: {int(fps)}")
+
+    def on_run(self):
+        pass
+
+    def on_stop(self):
+        pass
+
 
 
 if __name__ == "__main__":
