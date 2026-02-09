@@ -7,6 +7,7 @@ import random
 import math
 import json
 
+
 class Sprite:
     def __init__(self, x, y, w, h, color=(255, 255, 255), texture=None, alpha=False):
         self.x, self.y, self.width, self.height = x, y, w, h
@@ -113,7 +114,6 @@ class AnimatedSprite(Sprite):
             else:
                 self.surface = base_frame
 
-
     def update(self, dt):
         return self.update_animation(dt)
 
@@ -172,6 +172,59 @@ class SpatialGrid:
             self.clear()
             for obj in solids:
                 self.insert(obj)
+            self.dirty = False
+
+
+class HybridGrid:
+    """
+    A grid that separates static geometry (tiles) from dynamic entities (player, enemies).
+    Drastically reduces overhead by only rebuilding the dynamic part each frame.
+    """
+
+    def __init__(self, cell_size=500):
+        self.static_grid = SpatialGrid(cell_size)
+        self.dynamic_grid = SpatialGrid(cell_size)
+        self.dirty = False  # Compatibility flag
+
+    def bake_static(self, solids):
+        """Call this once (or when map changes) to freeze static solids."""
+        self.static_grid.clear()
+        for s in solids:
+            self.static_grid.insert(s)
+
+    def clear_dynamic(self):
+        self.dynamic_grid.clear()
+
+    def insert_dynamic(self, sprite):
+        self.dynamic_grid.insert(sprite)
+
+    def get_nearby(self, frect):
+        # Combine results from both grids
+        return self.static_grid.get_nearby(frect) + self.dynamic_grid.get_nearby(frect)
+
+    # --- COMPATIBILITY LAYER (Fixes the crash) ---
+
+    def mark_dirty(self):
+        """
+        Legacy support: The Scene loop rebuilds the grid every frame anyway,
+        so this can be a simple flag setter or a pass.
+        """
+        self.dirty = True
+
+    def clear(self):
+        """Legacy support: calling clear() clears the dynamic entities."""
+        self.clear_dynamic()
+
+    def insert(self, sprite):
+        """Legacy support: calling insert() adds to dynamic entities."""
+        self.insert_dynamic(sprite)
+
+    def rebuild_if_dirty(self, solids):
+        """Legacy support: Rebuilds dynamic grid if marked dirty."""
+        if self.dirty:
+            self.clear_dynamic()
+            for s in solids:
+                self.insert_dynamic(s)
             self.dirty = False
 
 
@@ -417,7 +470,8 @@ class Block(SolidSprite):
             max_fall_speed=1000,
             name="Generic Block",
             type="Generic",
-            sounds=None
+            sounds=None,
+            description=""
     ):
         super().__init__(
             -100,
@@ -452,6 +506,7 @@ class Block(SolidSprite):
         self.metadata = {}
         self.sounds = {} if sounds is None else sounds
         self.sound_engine = None
+        self.description = ""
 
     def clone(self):
         new_obj = copy.copy(self)
@@ -528,6 +583,9 @@ class Block(SolidSprite):
 
     def on_place(self, other=None, layer=None, dt=1):
         pass
+
+    def on_break(self, other, dt=1):
+        other.sound_engine.play_sfx
 
     def dump(self):
         """Dumps metadata in json"""

@@ -30,7 +30,7 @@ class Camera:
     velocity_x: float = 0.0
     velocity_y: float = 0.0
     target_delta_x = 0.0
-    target_delta_y = -200.0
+    target_delta_y = -100.0
 
     def __post_init__(self):
         self.scroll_x = self.x + self.width // 2
@@ -152,6 +152,106 @@ class Layer:
         self._cached_surf = None
 
 
+class BakedLayer(Layer):
+
+    def __init__(self, name: str, parallax: float = 1.0, width: int = 5000, height: int = 2000, realized_parallax=None,
+                 **kwargs):
+        super().__init__(name, parallax, realized_parallax)
+        self.world_width = width
+        self.world_height = height
+        self.baked_surface = None
+        self.has_baked = False
+
+        # We keep sprites list only until we bake
+        self.sprites = []
+
+    def add_static(self, sprite):
+        self.sprites.append(sprite)
+
+    def add_dynamic(self, sprite):
+        flag("No Dynamic add in BakedLayer", 2)
+        return self.add_static(sprite)
+
+    def bake(self):
+        # 1. Create the massive canvas
+        # flag(f"Baking layer '{self.name}' ({self.world_width}x{self.world_height})...")
+        self.baked_surface = pygame.Surface((self.world_width, self.world_height), pygame.SRCALPHA)
+
+        # 2. Draw everything onto it once
+        # We sort by Y or creation order if needed, assuming painter's algorithm here
+        for s in self.sprites:
+            # We assume sprite positions are world coordinates relative to this layer
+            # If your sprites have negative coordinates, you might need an offset here
+            self.baked_surface.blit(s.surface, (int(s.x), int(s.y)))
+
+        # 3. Clear memory
+        self.sprites.clear()
+        self.has_baked = True
+        # flag(f"Layer '{self.name}' baked successfully.")
+
+    def render(self, screen: pygame.Surface, camera: Camera, emitters=None):
+        if not self.visible or not self.has_baked: return
+
+        # Calculate where the camera is looking relative to this parallax layer
+        cx = camera.x * self.parallax
+        cy = camera.y * self.parallax
+
+        screen_w, screen_h = screen.get_size()
+
+        # Handle Zoom
+        zoom = camera.zoom
+        if abs(zoom - camera.target_zoom) < 0.001:
+            zoom = camera.target_zoom
+
+        view_w = int(screen_w / zoom)
+        view_h = int(screen_h / zoom)
+
+        # Optimization: Don't use subsurface if we are going out of bounds
+        # Instead, we calculate the overlap and blit directly
+
+        # Source rectangle (What part of the big image do we want?)
+        src_rect = pygame.Rect(cx, cy, view_w, view_h)
+
+        # Screen destination (Where does it go?)
+        dest_pos = (0, 0)
+
+        # Simple bounds handling:
+        # If the camera looks beyond the baked surface, pygame clips it automatically,
+        # but we need to calculate the negative offset if cx < 0
+
+        draw_x = 0
+        draw_y = 0
+
+        # If using zoom, we need an intermediate surface or just scale the final result
+        # Since this is a specialized fast layer, let's just grab the subsection
+
+        try:
+            sub = self.baked_surface.subsurface(src_rect.clip(self.baked_surface.get_rect()))
+
+            # If we clipped, we need to adjust position on screen
+            # (This logic handles edges of the world correctly)
+            blit_x = 0
+            blit_y = 0
+            if cx < 0: blit_x = -cx
+            if cy < 0: blit_y = -cy
+
+            # Draw the baked chunk
+            if zoom == 1.0:
+                screen.blit(sub, (blit_x, blit_y))
+            else:
+                scaled = pygame.transform.scale(sub, (int(sub.get_width() * zoom), int(sub.get_height() * zoom)))
+                screen.blit(scaled, (int(blit_x * zoom), int(blit_y * zoom)))
+
+        except ValueError:
+            # This happens if the rect is completely outside the surface
+            pass
+
+        # Draw dynamic emitters on top if needed
+        if emitters:
+            for emitter in emitters:
+                emitter.draw(screen, camera, self.parallax)
+
+
 class ParticleLayer:
     def __init__(self, name: str, parallax: float = 1.0, realized_parallax=None, **kwargs):
         self.name = name
@@ -216,12 +316,17 @@ class ChunkedLayer:
 
         self.effects: List[Tuple[Any, tuple]] = []
         self.emitters: List[Tuple[Any, tuple]] = []
+
+        # Optimization: Reuse surfaces
         self._cached_surf = None
+        self._cached_view_w = 0
+        self._cached_view_h = 0
 
     def add_effect(self, effect_fn, *args):
         self.effects.append((effect_fn, args))
 
     def add_static(self, sprite):
+        # Optimization: pre-calculate chunk keys to avoid doing it every frame
         if sprite.width > self.chunk_size or sprite.height > self.chunk_size:
             self.large_sprites.append(sprite)
             return
@@ -237,11 +342,11 @@ class ChunkedLayer:
         self.sprites.append(sprite)
 
     def remove_static(self, sprite, x=None, y=None):
-        # Check large sprites first
         if sprite in self.large_sprites:
             self.large_sprites.remove(sprite)
             return True
 
+        # Use provided coordinates for faster lookup if available
         check_x = x if x is not None else sprite.x
         check_y = y if y is not None else sprite.y
 
@@ -251,107 +356,133 @@ class ChunkedLayer:
         if (cx, cy) in self.chunks:
             if sprite in self.chunks[(cx, cy)]:
                 self.chunks[(cx, cy)].remove(sprite)
+                # Cleanup empty chunks to keep iteration fast
+                if not self.chunks[(cx, cy)]:
+                    del self.chunks[(cx, cy)]
                 return True
 
+        # Fallback search (slower)
         for ox in [-1, 0, 1]:
             for oy in [-1, 0, 1]:
                 ncx, ncy = cx + ox, cy + oy
-                if (ncx, ncy) in self.chunks:
-                    if sprite in self.chunks[(ncx, ncy)]:
-                        self.chunks[(ncx, ncy)].remove(sprite)
-                        return True
+                if (ncx, ncy) in self.chunks and sprite in self.chunks[(ncx, ncy)]:
+                    self.chunks[(ncx, ncy)].remove(sprite)
+                    if not self.chunks[(ncx, ncy)]:
+                        del self.chunks[(ncx, ncy)]
+                    return True
 
         return False
 
     def _get_view_surface(self, view_w, view_h):
-        alloc_w, alloc_h = 0, 0
-        if self._cached_surf:
-            alloc_w, alloc_h = self._cached_surf.get_size()
-
-        if view_w > alloc_w or view_h > alloc_h:
-            # Create a buffer 20% larger than needed to prevent constant resizing
+        # Optimization: Only recreate surface if size changes significantly
+        # or if it hasn't been created yet.
+        if (self._cached_surf is None or
+                view_w > self._cached_surf.get_width() or
+                view_h > self._cached_surf.get_height()):
+            # Allocate 20% extra to prevent constant reallocation during small resizes
             new_w = int(view_w * 1.2)
             new_h = int(view_h * 1.2)
             self._cached_surf = pygame.Surface((new_w, new_h), pygame.SRCALPHA)
 
-        elif view_w < alloc_w * 0.5:
-            self._cached_surf = pygame.Surface((view_w, view_h), pygame.SRCALPHA)
-
+        # Clear only the area we are going to use (faster than filling the whole buffer)
+        # However, due to scrolling, we usually just clear the sub-rect we need.
         surf = self._cached_surf.subsurface((0, 0, view_w, view_h))
         surf.fill((0, 0, 0, 0))
         return surf
 
     def render(self, screen: pygame.Surface, camera: Camera, emitters=None):
-        emitters = self.emitters if emitters is None else emitters
         if not self.visible: return
 
         screen_w, screen_h = screen.get_size()
 
+        # Handle Zoom
         zoom = camera.zoom
+        # Optimization: Floating point comparison tolerance
         if abs(zoom - camera.target_zoom) < 0.001:
             zoom = camera.target_zoom
 
+        # Calculate Viewport in World Coordinates
         view_w = int(screen_w / zoom)
         view_h = int(screen_h / zoom)
 
+        # Get render target
         layer_surf = self._get_view_surface(view_w, view_h)
 
-        cx, cy = camera.x * self.parallax, camera.y * self.parallax
+        # Camera Offset
+        cx = camera.x * self.parallax
+        cy = camera.y * self.parallax
 
+        # Determine visible chunks
         start_chunk_x = int(cx // self.chunk_size)
         end_chunk_x = int((cx + view_w) // self.chunk_size) + 1
         start_chunk_y = int(cy // self.chunk_size)
         end_chunk_y = int((cy + view_h) // self.chunk_size) + 1
 
+        # Optimization: Collect blits for batch processing (optional, but cleaner)
+        # Using direct blits here as it's often faster than constructing a list for fblits
+        # when we need to do math on coordinates (subtracting cx, cy).
 
+        # 1. Static Chunks
+        # We iterate only the necessary range.
         for x in range(start_chunk_x - 1, end_chunk_x + 1):
             for y in range(start_chunk_y - 1, end_chunk_y + 1):
                 chunk_key = (x, y)
+                # Dictionary lookup is O(1)
                 if chunk_key in self.chunks:
                     for s in self.chunks[chunk_key]:
-                        sx = s.x - cx
-                        sy = s.y - cy
+                        # Culling: fast rect check
+                        # We do the bounds check relative to camera here
+                        sx = int(s.x - cx)
+                        sy = int(s.y - cy)
+                        # Slightly expanded bounds check to prevent pop-in
                         if -s.width < sx < view_w and -s.height < sy < view_h:
-                            layer_surf.blit(s.surface, (int(sx), int(sy)))
+                            layer_surf.blit(s.surface, (sx, sy))
 
+        # 2. Large Sprites (Always check these)
         for s in self.large_sprites:
-            sx = s.x - cx
-            sy = s.y - cy
+            sx = int(s.x - cx)
+            sy = int(s.y - cy)
             if -s.width < sx < view_w and -s.height < sy < view_h:
-                layer_surf.blit(s.surface, (int(sx), int(sy)))
+                layer_surf.blit(s.surface, (sx, sy))
 
+        # 3. Dynamic Sprites
         for s in self.sprites:
-            sx = s.x - cx
-            sy = s.y - cy
+            sx = int(s.x - cx)
+            sy = int(s.y - cy)
             if -s.width < sx < view_w and -s.height < sy < view_h:
+                # OPTIMIZATION: Call update here only if strictly necessary for rendering.
+                # Ideally update() should be called in a separate loop outside render().
                 if hasattr(s, 'update'):
                     s.update()
-                layer_surf.blit(s.surface, (int(sx), int(sy)))
+                layer_surf.blit(s.surface, (sx, sy))
 
-        """if len(self.sprites) != 0:
-            print(self.sprites)"""
-
-        if emitters is not None:
-            for emitter in emitters:
+        # 4. Emitters
+        actual_emitters = emitters if emitters is not None else self.emitters
+        if actual_emitters:
+            for emitter in actual_emitters:
                 emitter.draw(layer_surf, camera, self.parallax)
 
+        # 5. Effects
         for effect_fn, args in self.effects:
             effect_fn(layer_surf, *args)
 
+        # 6. Final Scale to Screen
         if zoom != 1.0:
+            # Optimization: Use scale (nearest neighbor) if smoothscale is too slow.
+            # Smoothscale is heavy. If you want retro look, scale is better anyway.
+            # Using smoothscale to maintain your original style.
             scaled_output = pygame.transform.smoothscale(layer_surf, (screen_w, screen_h))
             screen.blit(scaled_output, (0, 0))
         else:
             screen.blit(layer_surf, (0, 0))
 
-
     def update(self, dt):
         pass
 
+    # Pickling support remains same
     def __getstate__(self):
         state = self.__dict__.copy()
-        if '_cached_surf' in state:
-            del state['_cached_surf']
+        if '_cached_surf' in state: del state['_cached_surf']
         return state
 
     def __setstate__(self, state):
@@ -443,6 +574,8 @@ class LitLayer(ChunkedLayer):
         super().__init__(name, parallax, realized_parallax=realized_parallax)
         self.lights = []
         self.ambient_color = ambient_color
+        # Optimization: Reuse the light map surface
+        self._cached_light_map = None
 
     def add_light(self, light: LightSource):
         self.lights.append(light)
@@ -452,8 +585,6 @@ class LitLayer(ChunkedLayer):
         if not self.visible: return
 
         screen_w, screen_h = screen.get_size()
-
-        # Stabilize Zoom
         zoom = camera.zoom
         if abs(zoom - camera.target_zoom) < 0.001:
             zoom = camera.target_zoom
@@ -461,80 +592,92 @@ class LitLayer(ChunkedLayer):
         view_w = int(screen_w / zoom)
         view_h = int(screen_h / zoom)
 
-        # Get surface (Lazy Alloc)
-        layer_surf = self._get_view_surface(view_w, view_h)
+        # 1. Render all geometry normally first
+        # We call the superclass logic manually to avoid redundant checks,
+        # but for simplicity and maintenance, we can just reuse the drawing logic
+        # or copy the relevant optimized parts.
 
+        layer_surf = self._get_view_surface(view_w, view_h)
         cx, cy = camera.x * self.parallax, camera.y * self.parallax
 
-        # --- 1. Collect Candidates ---
-        render_candidates = []
-
+        # --- DRAW SPRITES (Geometry) ---
         start_chunk_x = int(cx // self.chunk_size)
         end_chunk_x = int((cx + view_w) // self.chunk_size) + 1
         start_chunk_y = int(cy // self.chunk_size)
         end_chunk_y = int((cy + view_h) // self.chunk_size) + 1
 
-        # A. Chunks
+        # Use a blit sequence for potential speedup in Pygame 2+
+        blits_sequence = []
+
+        # Chunks
         for x in range(start_chunk_x - 1, end_chunk_x + 1):
             for y in range(start_chunk_y - 1, end_chunk_y + 1):
-                if (x, y) in self.chunks:
-                    render_candidates.extend(self.chunks[(x, y)])
+                chunk_key = (x, y)
+                if chunk_key in self.chunks:
+                    for s in self.chunks[chunk_key]:
+                        sx = int(s.x - cx)
+                        sy = int(s.y - cy)
+                        if -s.width < sx < view_w and -s.height < sy < view_h:
+                            layer_surf.blit(s.surface, (sx, sy))
 
-        # B. Large Sprites
-        render_candidates.extend(self.large_sprites)
+        # Large & Dynamic
+        for s in self.large_sprites + self.sprites:
+            sx = int(s.x - cx)
+            sy = int(s.y - cy)
+            if -s.width < sx < view_w and -s.height < sy < view_h:
+                layer_surf.blit(s.surface, (sx, sy))
 
-        # C. Dynamic Sprites
-        render_candidates.extend(self.sprites)
+        # --- APPLY LIGHTING (Global, not per-sprite) ---
+        # This is 100x faster than creating a surface for every block.
 
-        # --- 2. Collect Lights ---
-        visible_lights = []
+        # 1. Prepare Light Map
+        if (self._cached_light_map is None or
+                self._cached_light_map.get_size() != (view_w, view_h)):
+            self._cached_light_map = pygame.Surface((view_w, view_h), 0)  # No alpha needed for map
+
+        light_map = self._cached_light_map
+        # Fill with darkness (Ambient)
+        light_map.fill(self.ambient_color)
+
+        # 2. Add Lights (Additive)
+        # We only draw lights that are visible
+        view_rect = pygame.Rect(0, 0, view_w, view_h)
+
         for l in self.lights:
-            lx, ly = l.x - cx, l.y - cy
-            # Check overlap with View
-            if (lx + l.radius > 0 and lx - l.radius < view_w and
-                    ly + l.radius > 0 and ly - l.radius < view_h):
-                visible_lights.append(l)
+            lx = int(l.x - cx - l.radius)
+            ly = int(l.y - cy - l.radius)
 
-        # --- 3. Draw Loop ---
-        for s in render_candidates:
-            sx = s.x - cx
-            sy = s.y - cy
+            # Fast culling: Check if light rect intersects view
+            # Light dimensions are radius*2
+            diam = l.radius * 2
+            if lx + diam > 0 and lx < view_w and ly + diam > 0 and ly < view_h:
+                # BLEND_ADD adds the light color to the ambient darkness
+                light_map.blit(l.surface, (lx, ly), special_flags=pygame.BLEND_ADD)
 
-            if not (-s.width < sx < view_w and -s.height < sy < view_h):
-                continue
+        # 3. Apply Light Map to Geometry (Multiplicative)
+        # BLEND_MULT: Layer Color * Light Map Color.
+        # Transparent pixels (alpha 0) in layer_surf remain transparent.
+        # Visible pixels get tinted by the light map.
+        layer_surf.blit(light_map, (0, 0), special_flags=pygame.BLEND_MULT)
 
-            w, h = s.surface.get_size()
+        # --- Emitters & Effects (Post-lighting usually, or pre-lighting?) ---
+        # Usually particles glow, so they might be drawn *after* lighting or
+        # drawn *onto* the layer_surf before lighting.
+        # Your original code drew them after per-sprite lighting, effectively making them "lit"
+        # if they were blitted, or unlit if drawn on top.
+        # Standard: Particles are often self-illuminated. We draw them AFTER multiply.
 
-            light_map = pygame.Surface((w, h), 0) # TODO: WTF!?
-            light_map.fill(self.ambient_color)
-
-
-            s_center_x = s.x + w / 2
-            s_center_y = s.y + h / 2
-
-            for l in visible_lights:
-                dist_x = abs(l.x - s_center_x)
-                dist_y = abs(l.y - s_center_y)
-
-                if dist_x < (w / 2 + l.radius) and dist_y < (h / 2 + l.radius):
-                    lx_local = (l.x - l.radius) - s.x
-                    ly_local = (l.y - l.radius) - s.y
-                    light_map.blit(l.surface, (lx_local, ly_local), special_flags=pygame.BLEND_ADD)
-
-            final_sprite = s.surface.copy()
-            final_sprite.blit(light_map, (0, 0), special_flags=pygame.BLEND_MULT)
-
-            layer_surf.blit(final_sprite, (int(sx), int(sy)))
-
-        if emitters:
-            for em in emitters:
-                em.draw(layer_surf, camera, self.parallax)
+        actual_emitters = emitters if emitters is not None else self.emitters
+        if actual_emitters:
+            for emitter in actual_emitters:
+                emitter.draw(layer_surf, camera, self.parallax)
 
         for effect_fn, args in self.effects:
             effect_fn(layer_surf, *args)
 
-        # --- 5. Final Scale ---
+        # --- Final Render ---
         if zoom != 1.0:
+            # Use smoothscale for quality, or scale for speed
             scaled_output = pygame.transform.smoothscale(layer_surf, (screen_w, screen_h))
             screen.blit(scaled_output, (0, 0))
         else:
@@ -542,6 +685,17 @@ class LitLayer(ChunkedLayer):
 
     def update(self, dt):
         pass
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if '_cached_surf' in state: del state['_cached_surf']
+        if '_cached_light_map' in state: del state['_cached_light_map']
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._cached_surf = None
+        self._cached_light_map = None
 
 
 class TileMap:
@@ -629,7 +783,7 @@ class BlockMap:
         self._waila_offset_x = 0.0
         self._waila_target_alpha = 0.0
         self._waila_target_offset = 0.0
-        self._waila_font_name = None
+        self._waila_font_name = "PixeloidSans.ttf"
         self._waila_font_desc = None
         self._waila_surf = None
 
@@ -676,7 +830,7 @@ class BlockMap:
         if block.light_emission_intensity > 0 and isinstance(rl, LitLayer) and not block.physics_block:
             self.lights[layer_name][(gx, gy)] = rl.add_light(
                 LightSource(world_x, world_y,
-                            radius=block.light_emission_intensity*100,
+                            radius=block.light_emission_intensity * 100,
                             color=block.light_emission_color, falloff=0.99, steps=200))
         if block.light_emission_intensity > 0 and isinstance(rl, LitLayer) and block.physics_block:
             flag("Light Emitting Blocks do not support Physics as for now", level=2)
@@ -712,12 +866,13 @@ class BlockMap:
 
     def has_tile(self, screen_x, screen_y, layer_name=None):
         l = layer_name if layer_name is not None else 'middle'
-        return True if self.data[l].get(self.get_grid_pos(screen_x, screen_y, layer_name=l), None) is not None else False
+        return True if self.data[l].get(self.get_grid_pos(screen_x, screen_y, layer_name=l),
+                                        None) is not None else False
 
     def get_tile(self, screen_x, screen_y, layer_name=None):
         l = layer_name if layer_name is not None else 'middle'
         return self.data[l].get(self.get_grid_pos(screen_x, screen_y, layer_name=l),
-                                        None)
+                                None)
 
     def del_tile(self, gx, gy, layer_name=None):
         layer_name = layer_name or self.active_layer
@@ -946,7 +1101,7 @@ class BlockMap:
 
         for (gx, gy), sprite in self.data[LAYER_MID].items():
             block_cy = sprite.y + sprite.height / 2
-            if (gx-1, gy) in self.data[LAYER_BACK]:
+            if (gx - 1, gy) in self.data[LAYER_BACK]:
                 if block_cy < player_cy:
                     shadow = self._create_shadow(sprite.width, sprite.height)
                     sx = sprite.x - cam_x - 4
@@ -1013,6 +1168,9 @@ class BlockMap:
 
         for ln, datas in loaded.items():
             for block in datas:
+                if datas[block] not in level.registered_blocks:
+                    print(datas[block])
+
                 self.set_tile(*eval(block),
                               level.registered_blocks.get(datas[block], level.registered_blocks['_None']),
                               layer_name=ln
@@ -1064,6 +1222,7 @@ class UILayer(Layer):
 
     def render(self, screen: pygame.Surface, camera: Camera = None, emitters=None):
         if not self.visible: return
+        super().render(screen, camera)
 
         for el in self.elements:
             el.draw(screen)

@@ -28,13 +28,20 @@ class Game(Root):
                 # self.set_scene('1')
                 self.set_scene('save_selector')
 
-            playbutton = UIButton(*_scene0.c_justified_pos(150, 50, dy=100), text='Close Game')
-            playbutton2 = UIButton(*_scene0.c_justified_pos(150, 50, dy=0), text='Singleplayer')
+            playbutton = UIButton(*_scene0.c_justified_pos(150, 50, dy=100), text='Close Game',
+                                  bg_color=(30, 30, 30, 80))
+            playbutton2 = UIButton(*_scene0.c_justified_pos(150, 50, dy=0), text='Singleplayer',
+                                   bg_color=(30, 30, 30, 80))
+            title = UIText(400, 20, text="Ortensia", font_name="PixeloidSans.ttf", size=90, shadow=True,
+                           color=(240, 240, 255))
             playbutton.on_click = close_game
             playbutton2.on_click = play_game
+            gui.sprites.append(
+                Sprite(0, 0, 1200, 600, texture="assets/Ortensia1.png")
+            )
             gui.add_element(playbutton)
             gui.add_element(playbutton2)
-
+            gui.add_element(title)
         self.loaded_scenes = {'0': _scene0}
         self.active_scene_name = '0'
         self.state = 0
@@ -147,41 +154,41 @@ class Player(AnimatedSolidSprite):
         self.added = False
         self.on_floor = False
         self.inventory = {}
-        self.slotbar = SlotBar(x=260, y=0, level=level, slot_count=9)
+        self.slotbar = SlotBar(x=380, y=0, level=level, slot_count=9)
         self.uilayer = UILayer()
         self.uilayer.add_element(self.slotbar)
-        self.no_reachable_text = UIText(500, 570, "Not Reachable", shadow=False, font_name="ArcadeClassic", size=25)
+        self.no_reachable_text = UIText(20, 570, "Not Reachable",
+                                        shadow=False,
+                                        font_name="PixeloidSans.ttf",
+                                        size=25)
         self.uilayer.add_element(self.no_reachable_text)
         level.add_layer(self.uilayer)
         self.max_life = 20
         self.life = 20
 
         self.SPEED_X = 200
-        self.JUMP_FORCE = 260
+        self.JUMP_FORCE = 248
 
-        # --- GRAVITY SETTINGS (Celeste Style) ---
-        self.GRAVITY_RISE = 620  # Standard gravity when going up
+        self.GRAVITY_RISE = 625  # Standard gravity when going up
         self.GRAVITY_FALL = 800  # Heavier gravity when falling
         self.GRAVITY = self.GRAVITY_RISE
 
         self.FLYING = False
         self.mode = 0
 
-        # --- JUMP BUFFER & AUTOJUMP ---
         self.jump_buffer_timer = 0.0
         self.JUMP_BUFFER_DURATION = 0.15  # 150ms forgiveness window
         self.prev_space_state = False
 
-        # --- CLICK COOLDOWN ---
         self.click_cooldown_timer = 0.0
         self.CLICK_COOLDOWN_DURATION = 0.2
 
-        # --- DASH & MOVEMENT STATE ---
         self.facing_right = True
         self.is_dashing = False
         self.dash_timer = 0.0
         self.dash_cooldown_timer = 0.0
         self.stand_still = False
+        self.last_facing = 'right'
 
         self.DASH_SPEED = 600
         self.DASH_DURATION = 0.13
@@ -209,7 +216,6 @@ class Player(AnimatedSolidSprite):
             except Exception as e:
                 print(f"Controller error: {e}")
 
-
         # ----- SOUNDS
         self.walking_timer = 100
         self.sound_engine = None
@@ -223,7 +229,6 @@ class Player(AnimatedSolidSprite):
         self.vy = 0
 
     def take_damage(self, quantity):
-        "Take a quantity of Damage"
         if self.mode == 0:
             self.life -= quantity
 
@@ -260,7 +265,7 @@ class Player(AnimatedSolidSprite):
             self.vy = 0
 
         if self.walking_timer > 0:
-            self.walking_timer -= 1
+            self.walking_timer -= 80 * dt
         if dy < 0:
             self.walking_timer = 0
 
@@ -274,7 +279,6 @@ class Player(AnimatedSolidSprite):
             self.is_dashing = False
 
     def mechaniches(self, keys, dt):
-        # Update Timers
         if self.jump_buffer_timer > 0:
             self.jump_buffer_timer -= dt
         if self.click_cooldown_timer > 0:
@@ -284,7 +288,6 @@ class Player(AnimatedSolidSprite):
 
         curr_time_ms = pygame.time.get_ticks()
 
-        # --- INPUT UNIFICATION ---
         input_left = keys[pygame.K_a]
         input_right = keys[pygame.K_d]
         input_up = keys[pygame.K_w]
@@ -351,7 +354,7 @@ class Player(AnimatedSolidSprite):
                     self.dash_timer = self.DASH_DURATION
                     self.dash_cooldown_timer = self.DASH_COOLDOWN
                     self.facing_right = False
-                    self.sound_engine.play_sfx("assets/sounds/dash1.wav")
+                    self.sound_engine.play_sfx("assets/sounds/dash1.mp3")
 
             self.last_tap_key = 'left'
             self.last_tap_time = curr_time_ms
@@ -364,10 +367,9 @@ class Player(AnimatedSolidSprite):
                     self.dash_timer = self.DASH_DURATION
                     self.dash_cooldown_timer = self.DASH_COOLDOWN
                     self.facing_right = True
-                    self.sound_engine.play_sfx("assets/sounds/dash1.wav")
+                    self.sound_engine.play_sfx("assets/sounds/dash1.mp3")
             self.last_tap_key = 'right'
             self.last_tap_time = curr_time_ms
-
 
         self.prev_input_right = input_right
 
@@ -424,11 +426,9 @@ class Player(AnimatedSolidSprite):
         if self.FLYING and self.on_floor:
             self.FLYING = False
 
-        # Physics Step
         dx = current_vx * dt
         self.physics(dt, dx, dy, holding_jump=input_jump)
 
-        # Animations
         if self.is_dashing:
             self.set_state("walk")
         elif input_jump and dx > 0:
@@ -437,10 +437,12 @@ class Player(AnimatedSolidSprite):
             self.set_state("jump_left")
         elif dx > 0:
             self.set_state("walk_right")
+            self.last_facing = 'right'
         elif dx < 0:
             self.set_state("walk_left")
+            self.last_facing = 'left'
         else:
-            self.set_state("idle")
+            self.set_state("idle_" + self.last_facing)
 
         self.update_animation(dt)
 
@@ -474,9 +476,16 @@ class Player(AnimatedSolidSprite):
                         action_performed = True
 
                 if input_destroy and clicked is not None and item_in_hand.id != '_None':
-                    if not isinstance(item_in_hand, Block) and clicked.type in item_in_hand.breaking:
-                        ms.remove_tile(mx, my)
-                        item_in_hand.on_use(self)
+                    if not isinstance(item_in_hand, Block):
+                        if clicked.type in item_in_hand.breaking:
+                            ms.remove_tile(mx, my)
+                            item_in_hand.on_use(self)
+                            if "break" in clicked.sounds:
+                                clicked.play_r("break")
+                        else:
+                            self.no_reachable_text.set_text(f"You can't break it with: {item_in_hand.name}")
+                            self.no_reachable_text.alpha = 128
+
                     self.level.refresh_grid()
                     action_performed = True
 
@@ -486,6 +495,7 @@ class Player(AnimatedSolidSprite):
         else:
             if input_destroy or input_place:
                 self.no_reachable_text.alpha = 128
+                self.no_reachable_text.set_text(f"Not Reachable")
 
             ms.placer_light(mx, my, color=(180, 20, 20))
 
@@ -766,7 +776,8 @@ class SaveMenu(Scene):
         saves = get_save_names()
 
         self.ui.add_element(
-            UIText(x=self.root.w // 2 - 120, y=50, text="Select Level", size=40, font_name="ArcadeClassic", shadow=True))
+            UIText(x=self.root.w // 2 - 120, y=50, text="Select Level", size=40, font_name="PixeloidSans.ttf",
+                   shadow=True))
 
         start_y = 120
         for i, save_name in enumerate(saves):

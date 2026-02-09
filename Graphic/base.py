@@ -620,7 +620,7 @@ class FireflyEmitter(ParticleEmitter):
             self.firefly_data[i, 1] += random.uniform(-2, 2) * dt
             angle = self.firefly_data[i, 1]
 
-            speed = 20.0
+            speed = 10.0
             self.data[i, 2] = math.cos(angle) * speed
             self.data[i, 3] = math.sin(angle) * speed
 
@@ -653,7 +653,8 @@ class FireflyEmitter(ParticleEmitter):
 
 
 class Root:
-    def __init__(self, w=200, h=300, title="Ortensia Engine", flag=pygame.RESIZABLE | pygame.SCALED | pygame.DOUBLEBUF,
+    def __init__(self, w=200, h=300, title="Ortensia Engine",
+                 flag=pygame.RESIZABLE | pygame.SCALED | pygame.DOUBLEBUF | pygame.HWSURFACE,
                  icon=None):
         self.screen = pygame.display.set_mode((w, h), flag)
         self.w = w
@@ -920,10 +921,10 @@ class Scene:
         pass
 
 
-
 if __name__ == "__main__":
     def s(x):
         return int(x * 1)
+
 
     game = Scene(s(1000), s(600), flag=pygame.SCALED | pygame.RESIZABLE)
     bg2 = game.add_create_layer("Background2", 0.2)
@@ -938,7 +939,8 @@ if __name__ == "__main__":
 
     # player = SolidSprite(s(400), s(300), s(40), s(40), (255, 255, 255))
     player = AnimatedSolidSprite(s(400), s(300), s(64), s(64))
-    player.add_animation('idle', load_horizontal_spritesheet("../assets/animations/Aury/AuryRunning.png", 64, 64, row=0))
+    player.add_animation('idle',
+                         load_horizontal_spritesheet("../assets/animations/Aury/AuryRunning.png", 64, 64, row=0))
     fg.sprites.append(player)
     water = FluidSprite(s(200), s(500), s(600), s(100), color=(50, 100, 255, 120))
     fg.sprites.append(water)

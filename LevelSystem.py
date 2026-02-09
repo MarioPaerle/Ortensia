@@ -111,6 +111,6 @@ class LevelDataSystem:
                 if hasattr(current_layer, 'add_dynamic') and cls == 'WigglingSprite':
                     current_layer.add_dynamic(sprite)
                 elif hasattr(current_layer, 'add_static'):
-                    current_layer.add_static(sprite)
+                    current_layer.add_dynamic(sprite)
                 else:
                     current_layer.sprites.append(sprite)

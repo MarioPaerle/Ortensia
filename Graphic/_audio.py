@@ -62,8 +62,8 @@ class SoundEngine:
 
         # Settings
         self.master_volume = 1.0
-        self.music_volume = 0.5
-        self.sfx_volume = 0.8
+        self.music_volume = 0.6
+        self.sfx_volume = 0.3
         self.ambience_volume = 0.1
 
         self.initialized = True
@@ -141,6 +141,9 @@ class SoundEngine:
 
     def stop_music(self, fade_ms=1000):
         self.play_music(None, fade_ms)  # Fades out current to silence
+
+    def stop_ambience(self, fade_ms=1000):
+        self.play_ambience(None, fade_ms)  # Fades out current to silence
 
     def play_ambience(self, path, fade_ms=100):
         """
