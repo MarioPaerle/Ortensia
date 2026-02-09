@@ -193,3 +193,191 @@ class UITextInput(UIElement):
         text_surf = self.font.render(self.text, True, (255, 255, 255))
         screen.blit(text_surf, (self.x + 5, self.y + 10))
         pygame.draw.rect(screen, color, self.rect, 2)
+
+
+class TypewriterText:
+    """Displays text character by character."""
+
+    def __init__(self, x, y, text, size=40, speed=0.08, font_path="Graphic/Minecraftia-Regular.ttf"):
+        self.x = x
+        self.y = y
+        self.text = text
+        self.display = ""
+
+        # Font Loading
+        try:
+            self.font = pygame.font.Font(font_path, size)
+        except:
+            self.font = pygame.font.SysFont("Arial", size, bold=True)
+
+        self.speed = speed
+        self.timer = 0
+        self.idx = 0
+        self.finished = False
+        self.linger_timer = 0
+        self.visible = True
+
+    def update(self, dt=0.016):
+        if not self.finished:
+            self.timer += dt
+            if self.timer >= self.speed:
+                self.timer = 0
+                self.display += self.text[self.idx]
+                self.idx += 1
+                if self.idx >= len(self.text):
+                    self.finished = True
+        else:
+            self.linger_timer += dt
+
+    def draw(self, screen):
+        if not self.visible: return
+        surf = self.font.render(self.display, True, (255, 255, 255))
+        rect = surf.get_rect(center=(self.x, self.y))
+
+        shadow = self.font.render(self.display, True, (0, 0, 0))
+        shadow_rect = shadow.get_rect(center=(self.x + 2, self.y + 2))
+        screen.blit(shadow, shadow_rect)
+        screen.blit(surf, rect)
+
+    def handle_event(self, event):
+        pass
+
+
+class CreditsRoll:
+    """Sliding text for end credits."""
+
+    def __init__(self, w, h, lines, speed=40, font_path="PixeloidSans.ttf"):
+        self.w = w
+        self.h = h
+        self.lines = lines
+        self.y_offset = h + 50  # Start below screen
+        self.speed = speed
+        self.font_path = font_path
+        self.font_cache = {}
+        self.visible = True
+
+    def update(self, dt=0.016):
+        self.y_offset -= self.speed * dt
+
+    def draw(self, screen):
+        if not self.visible: return
+        current_y = self.y_offset
+
+        for text, size, color in self.lines:
+            # Cache fonts to avoid reloading every frame
+            if size not in self.font_cache:
+                try:
+                    self.font_cache[size] = pygame.font.Font(self.font_path, size)
+                except:
+                    self.font_cache[size] = pygame.font.SysFont("Arial", size, bold=True)
+
+            font = self.font_cache[size]
+            surf = font.render(text, True, color)
+            rect = surf.get_rect(center=(self.w // 2, current_y))
+
+            # Simple Shadow
+            shadow = font.render(text, True, (0, 0, 0))
+            s_rect = shadow.get_rect(center=(self.w // 2 + 2, current_y + 2))
+
+            # Culling: Only draw if on screen
+            if rect.bottom > 0 and rect.top < self.h:
+                screen.blit(shadow, s_rect)
+                screen.blit(surf, rect)
+
+            current_y += size + 20  # Line spacing
+
+    def handle_event(self, event):
+        pass
+
+
+class CinematicOverlay:
+    """Manages the sequence of animations for the ending."""
+
+    def __init__(self, uilayer, screen_w=1200, screen_h=600):
+        self.uilayer = uilayer
+        self.w = screen_w
+        self.h = screen_h
+        self.timer = 0.0
+        self.stage = 0
+
+        # Visuals
+        self.overlay_surf = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+        self.overlay_alpha = 0
+        self.active_elements = []
+
+        self.intro_phrases = [
+            "Will you believe in yourself?",
+            "You are the only one who can guide you",
+            "...",
+            "Everytime you take a step into the unknown",
+            "Everytime you feel the edge",
+            "Everytime you're scared",
+            "Everytime you're alone",
+            "Will you believe?      "
+        ]
+        self.phrase_idx = 0
+
+        self.credits_data = [
+            ("O R T E N S I A", 100, (150, 255, 150)),
+            ("", 50, (0, 0, 0)),
+            ("Demo 1", 100, (150, 255, 150)),
+            ("", 25, (200, 200, 200)),
+            ("demo of a Game By", 25, (200, 200, 200)),
+            ("Paerle", 30, (255, 255, 255)),
+            ("", 50, (0, 0, 0)),
+            ("Music", 30, (200, 200, 200)),
+            ("Paerle", 30, (255, 255, 255)),
+            ("", 150, (0, 0, 0)),
+            ("", 150, (0, 0, 0)),
+            ("Thanks for Playing", 60, (255, 255, 200)),
+            ("", 50, (255, 255, 200)),
+            ("", 50, (255, 255, 200)),
+            ("", 50, (255, 255, 200)),
+            ("", 50, (255, 255, 200)),
+            ("", 50, (255, 255, 200)),
+        ]
+
+    def update(self, dt=0.016):
+        if dt is None: dt = 0.016 / 3
+
+        self.timer += dt
+
+        if self.stage == 0:
+            if self.overlay_alpha < 220:
+                self.overlay_alpha += 10 * dt
+            else:
+                self.stage = 1
+                self.timer = 0
+
+        elif self.stage == 1:
+            if not self.active_elements:
+                if self.phrase_idx < len(self.intro_phrases):
+                    tw = TypewriterText(self.w // 2, self.h // 2, self.intro_phrases[self.phrase_idx])
+                    self.active_elements.append(tw)
+                else:
+                    self.stage = 2
+            else:
+                current = self.active_elements[0]
+                current.update(dt)
+                if current.finished and current.linger_timer > 2.0:
+                    self.active_elements.pop()
+                    self.phrase_idx += 1
+
+        elif self.stage == 2:
+            if not self.active_elements:
+                cr = CreditsRoll(self.w, self.h, self.credits_data)
+                self.active_elements.append(cr)
+            else:
+                self.active_elements[0].update(dt)
+
+    def draw(self, screen):
+        if self.overlay_alpha > 0:
+            self.overlay_surf.fill((0, 0, 0, min(int(self.overlay_alpha) + 7, 128)))
+            screen.blit(self.overlay_surf, (0, 0))
+
+        for el in self.active_elements:
+            el.draw(screen)
+
+    def handle_event(self, event):
+        pass
+
