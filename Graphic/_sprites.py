@@ -15,6 +15,8 @@ class Sprite:
         self.texture_path = texture
         self.alpha = alpha
 
+        self.tick_rate = 0
+        self._tick_timer = 0.0
         self._load_surface()
 
     def _load_surface(self):

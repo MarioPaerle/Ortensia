@@ -610,6 +610,8 @@ class ParticleEmitter:
 class FireflyEmitter(ParticleEmitter):
     def __init__(self, color=(190, 200, 190), count=50, size=1):
         super().__init__(color, count, size, g=0, sparsity=1.0)
+        self.tick_rate = 0
+        self._tick_timer = 0
         self.firefly_data = np.random.uniform(0, 5, (int(count * PARTICLE_EMISSION_QUALITY), 5))
 
     def update(self, dt):
@@ -682,10 +684,10 @@ class Scene:
         self.particle_emitters = []
         self.particle_layer_idx = -1
         self.solids = []
-        self.grid = SpatialGrid(cell_size=500)
+        self.grid = HybridGrid(cell_size=1000)
         self.running = True
         self.map_system = None
-        self.max_fps = 600
+        self.max_fps = 200
         self.game_div = 1000.0
         self.scale = 1
         self.layer_type = ChunkedLayer
@@ -814,9 +816,10 @@ class Scene:
                 if event.type == pygame.QUIT:
                     self.running = False
 
-            self.grid.clear()
+            #self.grid.clear()
+            self.grid.clear_dynamic()
             for obj in self.solids:
-                self.grid.insert(obj)
+                self.grid.insert_dynamic(obj)
 
             update_callback(self, dt)
             self.main_camera.update()
@@ -874,9 +877,40 @@ class Scene:
 
         self.main_camera.update()
         for updt in self.mechaniques:
-            updt.mechaniches(pygame.key.get_pressed(), dt)
+            # updt.mechaniches(pygame.key.get_pressed(), dt)
+            tick_rate = getattr(updt, 'tick_rate', 0)
+
+            if tick_rate > 0:
+                interval = 1.0 / tick_rate
+
+                if not hasattr(updt, '_tick_timer'):
+                    updt._tick_timer = 0.0
+
+                updt._tick_timer += dt
+
+                if updt._tick_timer >= interval:
+                    updt.mechaniches(pygame.key.get_pressed(), updt._tick_timer)
+
+                    updt._tick_timer %= interval
+            else:
+                updt.mechaniches(pygame.key.get_pressed(), dt)
+
         for updt in self.updatables:
-            updt.update(dt)
+                tick_rate = updt.tick_rate
+                if tick_rate > 0:
+                    interval = 1.0 / tick_rate
+
+                    """if not hasattr(updt, '_tick_timer'):
+                        updt._tick_timer = 0.0"""
+
+                    updt._tick_timer += dt
+
+                    if updt._tick_timer >= interval:
+                        updt.update(updt._tick_timer)
+
+                        updt._tick_timer %= interval
+                else:
+                    updt.update(dt)
 
         for emitter in self.particle_emitters:
             emitter.update(dt)
@@ -919,6 +953,13 @@ class Scene:
 
     def on_stop(self):
         pass
+
+    def __getattr__(self, name):
+        for layer in self.layers:
+            if hasattr(layer, 'name') and layer.name == name: # TODO: convert this to dictionary
+                return layer
+
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
 
 if __name__ == "__main__":

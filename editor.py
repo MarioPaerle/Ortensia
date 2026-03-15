@@ -11,7 +11,7 @@ from Graphic.gui import UIText, UIButton
 
 # --- CONFIGURATION ---
 TEXTURE_PATH = "assets/textures"
-OUTPUT_FILE = "saves/level_decor_data.json"
+OUTPUT_FILE = "saves/level_decor_data2.json"
 
 
 def get_all_textures(path):

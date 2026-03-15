@@ -154,6 +154,7 @@ class Player(AnimatedSolidSprite):
         self.added = False
         self.on_floor = False
         self.inventory = {}
+        self.tick_rate = 0
         self.slotbar = SlotBar(x=380, y=0, level=level, slot_count=9)
         self.uilayer = UILayer()
         self.uilayer.add_element(self.slotbar)
@@ -504,7 +505,7 @@ class Player(AnimatedSolidSprite):
 
         if self.life <= 0:
             self.die('Player Dead')
-        elif self.y > 1300:
+        elif self.y > 1800:
             self.die('Player Exceeded world minimum, felt into the void')
 
         if self.life <= 0:
@@ -537,6 +538,9 @@ class Player(AnimatedSolidSprite):
             [level.registered_blocks.get(a, '_None'), b] for a, b in datas['slotbar']
         ]
         self.slotbar.render_bar()
+
+
+class Entity
 
 
 class SlotBar(UIElement):
@@ -637,6 +641,7 @@ class WorldLevel(Scene):
         self.music = ""
         self.ambience = ""
         self.sound_engine = None
+        self.player = None
 
     def set_map(self, map_system):
         if self.map_system is not None:
@@ -810,9 +815,10 @@ class SaveMenu(Scene):
         self.ui.add_element(back_btn)
 
     def load_and_play(self, save_name):
-        self.root.set_scene('1')
+        scene = '1' if save_name == "Opening" else "2"
+        self.root.set_scene(scene)
         if '1' in self.root.loaded_scenes:
-            world_level = self.root.loaded_scenes['1']
+            world_level = self.root.loaded_scenes[scene]
             world_level.load(f"saves/{save_name}")
 
     def remove(self, save_name):

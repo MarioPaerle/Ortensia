@@ -24,7 +24,7 @@ if __name__ == '__main__':
     bg5 = level.add_create_layer("bg5", 0.25, layertype=BakedLayer)
     uilayer = UILayer(parallax=0)
     deco_back = LitLayer("DecoBack", parallax=1.0, ambient_color=(80, 80, 130), realized_parallax=0.4)
-    fg = ChunkedLayer("Foreground", 1, realized_parallax=1)
+    fg = ChunkedLayer("Foreground", 1, realized_parallax=1, chunk_size=50)
     deco_front = ChunkedLayer("DecoFront", parallax=1.0, realized_parallax=1.2)
 
     level.add_layer(deco_back)
@@ -57,10 +57,13 @@ if __name__ == '__main__':
         'back': deco_back,
         'middle': fg,
         'front': deco_front,
-    })
+    }, tile_size=40)
+    map.tick_rate = 2
 
     level.set_map(map)
     player = Player(50, 200, 24, 64, level=level, cw=16, coffset_x=23, coffset_y=-6)
+    player.mode = 1
+
     player.sound_engine = sound_engine
     player.add_animation('walk_right',
                          load_horizontal_spritesheet("assets/animations/Aury/AuryRunning.png", 64, 64, row=0,
@@ -98,7 +101,7 @@ if __name__ == '__main__':
     gamemode_button = UIButton(10, 140, text="Switch Gamemode", width=100, height=40)
     gamemode_button.on_click = lambda: player.switch_mode()
 
-    # uilayer.add_element(menu_button)
+    uilayer.add_element(menu_button)
     # uilayer.add_element(menu_button2)
     # uilayer.add_element(save_as_button)
     # uilayer.add_element(gamemode_button)

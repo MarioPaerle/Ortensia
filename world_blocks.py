@@ -658,6 +658,7 @@ class Destroyer:
         self.map_system = map_system
         self.speed = speed
         self.tick = 0
+        self.tick_rate = 0
 
     def update(self, dt):
         self.tick += dt*self.speed

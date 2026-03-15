@@ -64,12 +64,11 @@ class LevelDataSystem:
             return
 
         for layer_conf in data:
-            # 1. Trova o Crea il Layer
             existing_layer = next((l for l in self.level.layers if l.name == layer_conf['name']), None)
 
             if existing_layer:
                 current_layer = existing_layer
-                #current_layer.parallax = layer_conf['parallax']
+                # current_layer.parallax = layer_conf['parallax']
             else:
                 if layer_conf['type'] == "LitLayer":
                     current_layer = LitLayer(layer_conf['name'], layer_conf['parallax'])

@@ -5,19 +5,21 @@ import random
 # ================= CONFIGURATION =================
 
 # Input image path
-INPUT_IMAGE = "my_level_des2.png"
+INPUT_IMAGE = "level2_back.png"
 
 
-OUTPUT_FILE = "saves/Opening/-blockmap_back.json"
+OUTPUT_FILE = "saves/Second/-blockmap_back.json"
 
 
 COLOR_MAP = {
     (0, 0, 0): "_None",
-    #(255, 255, 255): "spawnpoint.png",
-    (255, 255, 255): "_Light1",
+    (255, 255, 255): "spawnpoint.png",
+    (255, 216, 0): [a.replace('deepslate', 'heavenslate') for a in ["deepslate2.png", "deepslate2.png",   "deepslate2_b.png", "deepslate2_b.png", "deepslate2_c.png", "deepslate2_c.png", "deepslate2_d.png",
+                      "deepslate2_e.png", "deepslate2_f.png", "deepslate2_g.png", "deepslate2_i.png"]],
+    # (255, 255, 255): "_Light1",
     (255, 255, 0): "HighStainedGlass",
-    (100, 100, 100): ["deepslate2.png", "deepslate2.png",   "deepslate2_b.png", "deepslate2_b.png", "deepslate2_c.png", "deepslate2_c.png", "deepslate2_d.png",
-                      "deepslate2_e.png", "deepslate2_f.png", "deepslate2_g.png", "deepslate2_i.png", "cobbled_deepslate.png", "cobbled_deepslate_b.png"],
+    (100, 100, 100): [a for a in ["deepslate2.png", "deepslate2.png",   "deepslate2_b.png", "deepslate2_b.png", "deepslate2_c.png", "deepslate2_c.png", "deepslate2_d.png",
+                      "deepslate2_e.png", "deepslate2_f.png", "deepslate2_g.png", "deepslate2_i.png", "cobbled_deepslate.png", "cobbled_deepslate_b.png"]],
     (50, 50, 50): "deepslate_down.png",
     (25, 25, 25): "black.png",
     (100, 100, 170): "BlueOrtensia.png",

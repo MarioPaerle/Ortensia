@@ -303,7 +303,7 @@ class ParticleLayer:
 
 
 class ChunkedLayer:
-    def __init__(self, name: str, parallax: float = 1.0, chunk_size: int = 500, realized_parallax=None):
+    def __init__(self, name: str, parallax: float = 1.0, chunk_size: int = 15, realized_parallax=None):
         self.name = name
         self.parallax = parallax
         self.realized_parallax = parallax if realized_parallax is None else realized_parallax
@@ -395,24 +395,18 @@ class ChunkedLayer:
 
         screen_w, screen_h = screen.get_size()
 
-        # Handle Zoom
         zoom = camera.zoom
-        # Optimization: Floating point comparison tolerance
         if abs(zoom - camera.target_zoom) < 0.001:
             zoom = camera.target_zoom
 
-        # Calculate Viewport in World Coordinates
         view_w = int(screen_w / zoom)
         view_h = int(screen_h / zoom)
 
-        # Get render target
         layer_surf = self._get_view_surface(view_w, view_h)
 
-        # Camera Offset
         cx = camera.x * self.parallax
         cy = camera.y * self.parallax
 
-        # Determine visible chunks
         start_chunk_x = int(cx // self.chunk_size)
         end_chunk_x = int((cx + view_w) // self.chunk_size) + 1
         start_chunk_y = int(cy // self.chunk_size)
@@ -434,39 +428,31 @@ class ChunkedLayer:
                         # We do the bounds check relative to camera here
                         sx = int(s.x - cx)
                         sy = int(s.y - cy)
-                        # Slightly expanded bounds check to prevent pop-in
                         if -s.width < sx < view_w and -s.height < sy < view_h:
                             layer_surf.blit(s.surface, (sx, sy))
 
-        # 2. Large Sprites (Always check these)
+
         for s in self.large_sprites:
             sx = int(s.x - cx)
             sy = int(s.y - cy)
             if -s.width < sx < view_w and -s.height < sy < view_h:
                 layer_surf.blit(s.surface, (sx, sy))
 
-        # 3. Dynamic Sprites
         for s in self.sprites:
             sx = int(s.x - cx)
             sy = int(s.y - cy)
             if -s.width < sx < view_w and -s.height < sy < view_h:
-                # OPTIMIZATION: Call update here only if strictly necessary for rendering.
-                # Ideally update() should be called in a separate loop outside render().
-                if hasattr(s, 'update'):
-                    s.update()
+                # self.tick_update(s)
                 layer_surf.blit(s.surface, (sx, sy))
 
-        # 4. Emitters
         actual_emitters = emitters if emitters is not None else self.emitters
         if actual_emitters:
             for emitter in actual_emitters:
                 emitter.draw(layer_surf, camera, self.parallax)
 
-        # 5. Effects
         for effect_fn, args in self.effects:
             effect_fn(layer_surf, *args)
 
-        # 6. Final Scale to Screen
         if zoom != 1.0:
             # Optimization: Use scale (nearest neighbor) if smoothscale is too slow.
             # Smoothscale is heavy. If you want retro look, scale is better anyway.
@@ -479,7 +465,19 @@ class ChunkedLayer:
     def update(self, dt):
         pass
 
-    # Pickling support remains same
+    def tick_update(self, sprite, dt):
+        if hasattr(sprite, 'update'):
+            if sprite.tick_rate > 0:
+                sprite._tick_timer += dt
+                interval = 1.0 / sprite.tick_rate
+
+                if sprite._tick_timer >= interval:
+                    sprite.update(sprite._tick_timer)
+                    sprite._tick_timer %= interval
+            else:
+                # Comportamento normale
+                sprite.update(dt)
+
     def __getstate__(self):
         state = self.__dict__.copy()
         if '_cached_surf' in state: del state['_cached_surf']
@@ -770,6 +768,8 @@ class BlockMap:
         self.data = {k: {} for k in LAYER_ORDER}
         self.lights = {k: {} for k in LAYER_ORDER}
         self.physics_blocks = {k: [] for k in LAYER_ORDER}
+        self.tick_rate = 0
+        self._tick_timer = 0
 
         self.hover_timer = 0.0
         self.hover_default_color = (190, 190, 255)
@@ -839,9 +839,22 @@ class BlockMap:
         self.data[layer_name][(gx, gy)] = tile_sprite
 
         if layer_name == LAYER_MID:
-            self.level.solids.append(tile_sprite)
+            if hasattr(self.level.grid, 'static_grid'):
+                self.level.grid.static_grid.insert(tile_sprite)
+            else:
+                self.level.solids.append(tile_sprite)  # Fallback se usi ancora SpatialGrid
+
+                # Solo i blocchi che cadono e i giocatori vanno nella lista che si aggiorna a ogni frame
             if tile_sprite.physics_block:
                 self.physics_blocks[layer_name].append(tile_sprite)
+                self.level.solids.append(tile_sprite)
+
+    def refresh_static_grid(self):
+        if hasattr(self.level.grid, 'static_grid'):
+            self.level.grid.static_grid.clear()
+            for (gx, gy), sprite in self.data[LAYER_MID].items():
+                if not getattr(sprite, 'physics_block', False):
+                    self.level.grid.static_grid.insert(sprite)
 
     def place_tile(self, screen_x, screen_y, block, layer_name=None, placer=None):
         layer_name = layer_name or self.active_layer
@@ -858,6 +871,8 @@ class BlockMap:
         if overwrite and (gx, gy) in self.data[layer_name]:
             self.del_tile(gx, gy, layer_name)
         self._place_internal(gx, gy, block, layer_name)
+
+        self.refresh_static_grid()
 
     def remove_tile(self, screen_x, screen_y, layer_name=None):
         layer_name = layer_name or self.active_layer
@@ -889,6 +904,8 @@ class BlockMap:
         if (gx, gy) in self.lights[layer_name]:
             self._layer(layer_name).lights.remove(self.lights[layer_name][(gx, gy)])
             del self.lights[layer_name][(gx, gy)]
+
+        self.refresh_static_grid()
 
     def placer_light(self, screen_x, screen_y, color=None):
         self.hover_color = color if color else self.hover_default_color
@@ -1009,28 +1026,24 @@ class BlockMap:
             return
 
         player = self.level.player
-        player_cx = player.x + player.width / 2
-        player_cy = player.y + player.height / 2
-
         fade_distance = self.tile_size * 3
         k = 8.0
 
-        for (gx, gy), sprite in self.data[LAYER_FRONT].items():
-            block_cx = sprite.x + sprite.width / 2
-            block_cy = sprite.y + sprite.height / 2
+        # 1. Trova le coordinate griglia del player
+        player_gx = int((player.x + player.width / 2) // self.tile_size)
+        player_gy = int((player.y + player.height / 2) // self.tile_size)
 
-            dist = math.sqrt((player_cx - block_cx) ** 2 + (player_cy - block_cy) ** 2)
+        # 2. Ripristina l'opacità per TUTTI i blocchi modificati di recente
+        # (dovrai tenere traccia dei blocchi faddati in una lista a parte come self.faded_blocks)
 
-            if dist < fade_distance:
-                target_alpha = int(160 + (dist / fade_distance) * 95)
-            else:
-                target_alpha = 255
-
-            if not hasattr(sprite, '_current_alpha'):
-                sprite._current_alpha = 255.0
-
-            sprite._current_alpha += (target_alpha - sprite._current_alpha) * min(1.0, k * dt)
-            sprite.surface.set_alpha(int(sprite._current_alpha))
+        # 3. Itera SOLO in un quadrato attorno al player (es: raggio di 4 blocchi)
+        for x in range(player_gx - 4, player_gx + 5):
+            for y in range(player_gy - 4, player_gy + 5):
+                sprite = self.data[LAYER_FRONT].get((x, y))
+                if sprite:
+                    # ORA fai il tuo calcolo sqrt e l'alpha, ma lo farai massimo 81 volte,
+                    # non importa se la mappa ha 2 milioni di blocchi!
+                    pass
 
     def _update_back_layer_effects(self):
         import pygame
@@ -1177,6 +1190,8 @@ class BlockMap:
                               )
                 if block in loaded_metadata:
                     self.data[ln][*eval(block)].set_metadata(loaded_metadata[block])
+
+        self.refresh_static_grid()
 
     def loadstruct(self, level, path=''):
         for ln in LAYER_ORDER:
